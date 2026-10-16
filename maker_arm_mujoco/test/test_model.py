@@ -54,6 +54,9 @@ def test_the_model_compiles_with_the_seven_driven_joints_and_the_camera():
     data = mujoco.MjData(model)
     data.qpos[[model.joint(n).qposadr[0] for n in JOINTS[:6]]] = READY
     mujoco.mj_forward(model, data)
+    # The world frame is mount_link: grasp_center is where the description test puts it.
+    grasp = data.xpos[model.body('grasp_center').id]
+    assert np.allclose(grasp, (0.2749, 0.0371, 0.1646), atol=0.002), grasp
     robot = {b for b in range(1, model.nbody) if not model.body(b).name.startswith('object/')}
     for i in range(data.ncon):
         c = data.contact[i]

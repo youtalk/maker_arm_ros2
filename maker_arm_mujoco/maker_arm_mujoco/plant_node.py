@@ -7,7 +7,9 @@ thread renders the wrist camera from a copy of the joint state and publishes the
 """
 
 import math
+import os
 from pathlib import Path
+import queue
 import socket
 import struct
 import threading
@@ -48,6 +50,27 @@ def open_can(interface):
         ) from None
     sock.setblocking(False)
     return sock
+
+
+def answer(sock, bank, now_s, log):
+    """Drain the CAN frames into the bank and send its replies. Return the replies dropped."""
+    dropped = 0
+    while True:
+        try:
+            can_id, _, data = CAN_FRAME.unpack(sock.recv(CAN_FRAME.size))
+        except BlockingIOError:
+            return dropped
+        except OSError as e:  # the bus is down: keep stepping, the daemon sees silence
+            log.warning(f'CAN receive failed: {e.strerror}', throttle_duration_sec=LOG_EVERY_S)
+            return dropped
+        if not can_id & socket.CAN_EFF_FLAG:
+            continue  # RobStride frames carry 29-bit ids
+        for rid, rdata in bank.handle(can_id & socket.CAN_EFF_MASK, data, now_s):
+            try:
+                sock.send(CAN_FRAME.pack(rid | socket.CAN_EFF_FLAG, len(rdata), rdata))
+            except OSError as e:  # a full queue (EAGAIN, ENOBUFS) or a downed bus
+                dropped += 1
+                log.warning(f'CAN send failed: {e.strerror}', throttle_duration_sec=LOG_EVERY_S)
 
 
 def transform(stamp, parent, child, pos, quat_wxyz):
@@ -96,38 +119,51 @@ class PlantNode(Node):
         info.p = [f, 0.0, c, 0.0, 0.0, f, c, 0.0, 0.0, 0.0, 1.0, 0.0]
         return info
 
-    def camera_loop(self):
-        """Publish the wrist image and the object poses at camera_hz, from a copy of qpos."""
+    def camera_loop(self, started):
+        """
+        Publish the wrist image and the object poses at camera_hz, from a copy of qpos.
+
+        Put None on `started` once the renderer exists, or the error that stopped it.
+        """
         model = self.plant.model
-        view = mujoco.MjData(model)
-        # The renderer's GL context belongs to the thread that makes it: this one.
-        renderer = mujoco.Renderer(model, IMAGE_SIZE, IMAGE_SIZE)
+        try:  # the renderer's GL context belongs to the thread that makes it: this one
+            view = mujoco.MjData(model)
+            renderer = mujoco.Renderer(model, IMAGE_SIZE, IMAGE_SIZE)
+        except Exception as e:
+            started.put(e)
+            return
+        started.put(None)
         bodies = {o['name']: model.body(f'object/{o["name"]}').id for o in self.scene['objects']}
         info = self.camera_info()
         image = CompressedImage(format='jpeg')
         image.header.frame_id = CAMERA_FRAME
         due = time.monotonic()
         while rclpy.ok():
-            with self.lock:
-                view.qpos[:] = self.plant.data.qpos
-            mujoco.mj_kinematics(model, view)
-            mujoco.mj_camlight(model, view)
-            stamp = self.get_clock().now().to_msg()
-            self.tf.sendTransform([
-                transform(stamp, 'mount_link', f'object/{name}', view.xpos[b], view.xquat[b])
-                for name, b in bodies.items()
-            ])
-            renderer.update_scene(view, camera='wrist_camera')
-            image.header.stamp = info.header.stamp = stamp
-            image.data = cv2.imencode('.jpg', renderer.render()[:, :, ::-1])[1].tobytes()
-            self.image_pub.publish(image)
-            self.info_pub.publish(info)
+            try:
+                with self.lock:
+                    view.qpos[:] = self.plant.data.qpos
+                mujoco.mj_kinematics(model, view)
+                mujoco.mj_camlight(model, view)
+                stamp = self.get_clock().now().to_msg()
+                self.tf.sendTransform([
+                    transform(stamp, 'mount_link', f'object/{name}', view.xpos[b], view.xquat[b])
+                    for name, b in bodies.items()
+                ])
+                renderer.update_scene(view, camera='wrist_camera')
+                image.header.stamp = info.header.stamp = stamp
+                image.data = cv2.imencode('.jpg', renderer.render()[:, :, ::-1])[1].tobytes()
+                self.image_pub.publish(image)
+                self.info_pub.publish(info)
+            except Exception as e:  # one bad frame must not end the camera
+                if rclpy.ok():
+                    self.get_logger().error(
+                        f'wrist camera frame failed: {e!r}', throttle_duration_sec=LOG_EVERY_S)
             due += 1.0 / self.camera_hz
             time.sleep(max(0.0, due - time.monotonic()))
 
     def run(self):
         """Step physics at 1 kHz on the wall clock and answer the CAN frames between steps."""
-        plant, sock = self.plant, self.sock
+        plant, sock, log = self.plant, self.sock, self.get_logger()
         start = time.monotonic()
         late = dropped = k = 0
         next_log = LOG_EVERY_S
@@ -138,25 +174,14 @@ class PlantNode(Node):
                 time.sleep(-lag)
             elif lag > LATE_S:
                 late += 1
-            while True:
-                try:
-                    can_id, _, data = CAN_FRAME.unpack(sock.recv(CAN_FRAME.size))
-                except BlockingIOError:
-                    break
-                if not can_id & socket.CAN_EFF_FLAG:
-                    continue  # RobStride frames carry 29-bit ids
-                for rid, rdata in plant.bank.handle(can_id & socket.CAN_EFF_MASK, data, now_s):
-                    try:
-                        sock.send(CAN_FRAME.pack(rid | socket.CAN_EFF_FLAG, len(rdata), rdata))
-                    except BlockingIOError:
-                        dropped += 1
+            dropped += answer(sock, plant.bank, now_s, log)
             with self.lock:
                 plant.step(now_s)
             if k == 0:
                 print('PLANT_READY', flush=True)
             k += 1
             if now_s >= next_log:
-                self.get_logger().info(
+                log.info(
                     f'{late} steps more than {LATE_S * 1e3:.0f} ms late, '
                     f'{dropped} replies dropped')
                 next_log += LOG_EVERY_S
@@ -166,7 +191,12 @@ def main():
     rclpy.init()
     try:
         node = PlantNode()
-        threading.Thread(target=node.camera_loop, daemon=True).start()
+        started = queue.Queue(1)
+        threading.Thread(target=node.camera_loop, args=(started,), daemon=True).start()
+        error = started.get()
+        if error is not None:  # a blind plant never prints PLANT_READY
+            gl = os.environ.get('MUJOCO_GL')
+            raise SystemExit(f'cannot build the wrist camera renderer (MUJOCO_GL={gl}): {error!r}')
         node.run()
     except KeyboardInterrupt:
         pass
