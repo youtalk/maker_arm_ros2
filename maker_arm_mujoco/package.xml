@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>maker_arm_mujoco</name>
+  <version>0.1.0</version>
+  <description>MuJoCo plant for the MakerMods Maker Arm that answers on vcan0 as its RobStride motors</description>
+  <maintainer email="youtalk@users.noreply.github.com">Yutaka Kondo</maintainer>
+  <license>Apache-2.0</license>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
