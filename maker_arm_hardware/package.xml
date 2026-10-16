@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>maker_arm_hardware</name>
+  <version>0.1.0</version>
+  <description>ros2_control hardware interface of the MakerMods Maker Arm</description>
+  <maintainer email="youtalk@users.noreply.github.com">Yutaka Kondo</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <test_depend>ament_cmake_gtest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
