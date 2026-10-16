@@ -7,12 +7,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          path: src/maker-arm-ros2
+          path: src/maker_arm_ros2
       - name: Install dependencies
         run: |
           apt-get update
           rosdep update
           rosdep install --from-paths src --ignore-src -y
+      - name: Install the daemon
+        run: |
+          apt-get install -y rustc-1.85 cargo-1.85
+          PATH=/usr/lib/rust-1.85/bin:$PATH cargo install --locked --git https://github.com/youtalk/maker-arm-rs --rev be17836308af8602fee5d319eb1565f30445636d maker-arm-cli
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - name: Build
         run: . /opt/ros/jazzy/setup.sh && colcon build
       - name: Test
