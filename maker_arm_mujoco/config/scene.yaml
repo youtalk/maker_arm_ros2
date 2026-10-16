@@ -1,0 +1,19 @@
+# The S3 scene in mount_link (m, rad, kg). The MuJoCo plant and the pick-and-place demo both
+# read this file and apply scene.perturbed(scene, seed) to it.
+# Reach: the lab picked parts top-down at x 0.13 to 0.29 m and |y| up to 0.18 m
+# (core/layout.py SCATTER_X, SCATTER_Y), and the ready pose puts grasp_center at
+# (0.2749, 0.0371, 0.1646).
+desk_z: 0.0  # the lab's desk top (core/layout.py DESK_POS)
+objects:
+  - name: block
+    size: [0.03, 0.03, 0.04]  # 30 mm across: the jaws open to a 104.8 mm gap
+    pos: [0.20, 0.10, 0.02]  # resting on the desk
+    yaw: 0.0
+    mass: 0.03
+    rgba: [0.85, 0.2, 0.15, 1.0]
+    place: [0.20, -0.10, 0.02]  # the place target: the block's center when placed
+# Between the block and its place target, and 50 mm high, so a lift to about 0.1 m passes over.
+obstacle:
+  name: wall
+  size: [0.06, 0.02, 0.05]
+  pos: [0.20, 0.0, 0.025]
