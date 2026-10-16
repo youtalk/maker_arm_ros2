@@ -1,0 +1,5 @@
+cartesian_limits:
+  max_trans_vel: 0.2  # INITIAL: V2 measures the real tip speed ceiling
+  max_trans_acc: 1.0  # INITIAL: V2 measures the real tip acceleration ceiling
+  max_trans_dec: -1.0
+  max_rot_vel: 0.8

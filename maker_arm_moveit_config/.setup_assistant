@@ -1,0 +1,17 @@
+moveit_setup_assistant_config:
+  urdf:
+    package: maker_arm_description
+    relative_path: urdf/maker_arm.urdf.xacro
+    xacro_args: use_ros2_control:=false
+  srdf:
+    relative_path: config/maker_arm.srdf
+  package_settings:
+    author_name: Yutaka Kondo
+    author_email: youtalk@users.noreply.github.com
+    generated_timestamp: 1792195200
+  control_xacro:
+    command:
+      - position
+    state:
+      - position
+      - velocity
