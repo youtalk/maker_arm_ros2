@@ -1,0 +1,6 @@
+maker-arm-ros2
+Copyright 2026 Yutaka Kondo
+
+This product includes the URDF and meshes of the MakerMods Maker Arm from
+https://github.com/makermods-robotics/maker-arm-sdk (MakerMods, Apache-2.0).
+They are vendored in maker_arm_description/urdf and maker_arm_description/meshes.
