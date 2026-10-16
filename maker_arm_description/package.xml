@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>maker_arm_description</name>
+  <version>0.1.0</version>
+  <description>URDF, meshes and ros2_control block of the MakerMods Maker Arm</description>
+  <maintainer email="youtalk@users.noreply.github.com">Yutaka Kondo</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>xacro</exec_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>python3-urdfdom-py</test_depend>
+  <test_depend>xacro</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

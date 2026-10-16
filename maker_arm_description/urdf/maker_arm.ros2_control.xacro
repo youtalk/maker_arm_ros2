@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:macro name="maker_arm_ros2_control"
+               params="interface executable rt persist profile dynamics params residual gripper_map socket log_file">
+    <ros2_control name="MakerArm" type="system">
+      <hardware>
+        <plugin>maker_arm_hardware/MakerArmSystem</plugin>
+        <param name="interface">${interface}</param>
+        <param name="executable">${executable}</param>
+        <param name="rt">${str(rt).lower()}</param>
+        <param name="persist">${str(persist).lower()}</param>
+        <param name="profile">${profile}</param>
+        <param name="dynamics">${dynamics}</param>
+        <param name="params">${params}</param>
+        <param name="residual">${residual}</param>
+        <param name="gripper_map">${gripper_map}</param>
+        <param name="socket">${socket}</param>
+        <param name="log">${log_file}</param>
+      </hardware>
+      <xacro:macro name="maker_arm_joint" params="name">
+        <joint name="${name}">
+          <command_interface name="position"/>
+          <state_interface name="position"/>
+          <state_interface name="velocity"/>
+          <state_interface name="effort"/>
+        </joint>
+      </xacro:macro>
+      <xacro:maker_arm_joint name="link_002_joint"/>
+      <xacro:maker_arm_joint name="link_003_joint"/>
+      <xacro:maker_arm_joint name="link_004_joint"/>
+      <xacro:maker_arm_joint name="link_005_joint"/>
+      <xacro:maker_arm_joint name="link_006_joint"/>
+      <xacro:maker_arm_joint name="link_007_joint"/>
+      <xacro:maker_arm_joint name="gripper_left_joint"/>
+    </ros2_control>
+  </xacro:macro>
+</robot>

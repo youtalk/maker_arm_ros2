@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="maker_arm">
+  <xacro:arg name="use_ros2_control" default="true"/>
+  <xacro:arg name="desk" default="true"/>
+  <xacro:arg name="interface" default="sim"/>
+  <xacro:arg name="executable" default="maker-arm-cli"/>
+  <xacro:arg name="rt" default="false"/>
+  <xacro:arg name="persist" default="false"/>
+  <xacro:arg name="profile" default="$(find maker_arm_description)/config/daemon/sim_profile.json"/>
+  <xacro:arg name="dynamics" default="$(find maker_arm_description)/config/daemon/dynamics_urdf.json"/>
+  <xacro:arg name="params" default=""/>
+  <xacro:arg name="residual" default=""/>
+  <xacro:arg name="gripper_map" default=""/>
+  <xacro:arg name="socket" default=""/>
+  <xacro:arg name="log" default=""/>
+
+  <xacro:include filename="$(find maker_arm_description)/urdf/maker_arm_sdk.urdf"/>
+
+  <!-- Z-up frame at the desk plane; the SDK's base_link is Y-up (the lab's MOUNT_RPY). -->
+  <link name="mount_link"/>
+  <joint name="mount_joint" type="fixed">
+    <parent link="mount_link"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 0" rpy="${pi/2} 0 ${pi}"/>
+  </joint>
+
+  <xacro:if value="$(arg desk)">
+    <!-- Top 1 mm below the mount plane, so MoveIt and Servo see the desk. -->
+    <link name="desk_link">
+      <collision>
+        <origin xyz="0 0 -0.011" rpy="0 0 0"/>
+        <geometry><box size="1.2 1.2 0.02"/></geometry>
+      </collision>
+    </link>
+    <joint name="desk_joint" type="fixed">
+      <parent link="mount_link"/>
+      <child link="desk_link"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </joint>
+  </xacro:if>
+
+  <xacro:if value="$(arg use_ros2_control)">
+    <xacro:include filename="$(find maker_arm_description)/urdf/maker_arm.ros2_control.xacro"/>
+    <xacro:maker_arm_ros2_control
+      interface="$(arg interface)" executable="$(arg executable)" rt="$(arg rt)"
+      persist="$(arg persist)" profile="$(arg profile)" dynamics="$(arg dynamics)"
+      params="$(arg params)" residual="$(arg residual)" gripper_map="$(arg gripper_map)"
+      socket="$(arg socket)" log_file="$(arg log)"/>
+  </xacro:if>
+</robot>
