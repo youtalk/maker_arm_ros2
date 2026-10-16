@@ -33,7 +33,7 @@ std::string default_socket(const std::string & interface);
 // (empty for an empty path) and the raw gripper_map text. Throws when a file cannot be read.
 uint64_t options_digest(const DaemonOptions & o);
 
-// `<executable> serve ...` for these options, with the socket always named.
+// `<executable> serve --flag=value ...` for these options, with the socket always named.
 std::vector<std::string> serve_argv(const DaemonOptions & o);
 
 class DaemonLink

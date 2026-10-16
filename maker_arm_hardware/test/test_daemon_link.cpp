@@ -2,15 +2,20 @@
 // on PATH; without it, each test fails with the install line.
 #include <gtest/gtest.h>
 
+#include <poll.h>
 #include <signal.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -22,6 +27,10 @@ namespace fs = std::filesystem;
 namespace w = maker_arm_hardware::wire;
 using maker_arm_hardware::DaemonLink;
 using maker_arm_hardware::DaemonOptions;
+
+const char kInstall[] =
+  "cargo install --locked --git https://github.com/youtalk/maker-arm-rs --rev "
+  "be17836308af8602fee5d319eb1565f30445636d maker-arm-cli";
 
 namespace
 {
@@ -55,20 +64,30 @@ DaemonOptions sim_options(const Scratch & tmp)
   return o;
 }
 
+// False for no /proc entry and for a zombie: in a container, PID 1 may never reap the daemon.
+bool alive(pid_t pid)
+{
+  std::ifstream f("/proc/" + std::to_string(pid) + "/stat");
+  const std::string stat{std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
+  const auto p = stat.rfind(')');  // "pid (comm) S ...": comm may hold spaces
+  return p != std::string::npos && p + 2 < stat.size() && stat[p + 2] != 'Z';
+}
+
 bool gone_within(pid_t pid, std::chrono::milliseconds wait)
 {
   const auto end = std::chrono::steady_clock::now() + wait;
-  while (kill(pid, 0) == 0) {
+  while (alive(pid)) {
     if (std::chrono::steady_clock::now() >= end) {return false;}
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
   }
   return true;
 }
 
-std::string what_of_open(const DaemonOptions & o)
+std::string what_of_open(
+  const DaemonOptions & o, std::chrono::seconds wait = DaemonLink::kSpawnWait)
 {
   try {
-    DaemonLink::open(o);
+    DaemonLink::open(o, wait);
   } catch (const std::runtime_error & e) {
     return e.what();
   }
@@ -96,7 +115,7 @@ TEST(DaemonLink, ADigestMismatchRefusesAndNamesRelease)
   const auto e = what_of_open(o);
   EXPECT_NE(e.find("uses other files"), std::string::npos) << e;
   EXPECT_NE(e.find("release"), std::string::npos) << e;
-  EXPECT_EQ(kill(pid, 0), 0) << "the refused daemon must keep running";
+  EXPECT_TRUE(alive(pid)) << "the refused daemon must keep running";
   kill(pid, SIGKILL);  // sim only: no motors to drop
 }
 
@@ -136,11 +155,59 @@ TEST(DaemonLink, AMissingExecutableNamesTheInstallCommand)
   auto o = sim_options(tmp);
   o.executable = "maker-arm-cli-missing";
   const auto e = what_of_open(o);
-  EXPECT_NE(
-    e.find(
-      "cargo install --locked --git https://github.com/youtalk/maker-arm-rs --rev "
-      "be17836308af8602fee5d319eb1565f30445636d maker-arm-cli"),
-    std::string::npos) << e;
+  EXPECT_NE(e.find(kInstall), std::string::npos) << e;
+}
+
+TEST(DaemonLink, ADaemonThatNeverAnswersNamesTheInstallCommand)
+{
+  // As an older maker-arm-cli that refuses the flags: it exits and never binds the socket.
+  Scratch tmp;
+  auto o = sim_options(tmp);
+  o.executable = "/bin/true";
+  const auto e = what_of_open(o, std::chrono::seconds(1));
+  EXPECT_NE(e.find("no daemon answered"), std::string::npos) << e;
+  EXPECT_NE(e.find(kInstall), std::string::npos) << e;
+}
+
+TEST(DaemonLink, AnotherProtocolNamesTheInstallCommand)
+{
+  Scratch tmp;
+  const auto o = sim_options(tmp);
+  sockaddr_un a{};
+  a.sun_family = AF_UNIX;
+  o.socket.copy(a.sun_path, sizeof a.sun_path - 1);
+  const int l = socket(AF_UNIX, SOCK_STREAM, 0);
+  ASSERT_EQ(bind(l, reinterpret_cast<const sockaddr *>(&a), sizeof a), 0);
+  ASSERT_EQ(listen(l, 1), 0);
+  // A daemon of wire version 2: it reads the Hello and the Poll, then answers in its version.
+  std::thread peer([l] {
+      pollfd p{l, POLLIN, 0};
+      if (poll(&p, 1, 5000) != 1) {return;}  // never hangs the test
+      const int c = accept(l, nullptr, nullptr);
+      std::array<uint8_t, 32> in{};
+      if (recv(c, in.data(), in.size(), MSG_WAITALL) == 32) {
+        std::array<uint8_t, w::kStateLen> out{0x4D, 0x52, 0x41, 0x4D, 2, 0, 4, 0};
+        if (send(c, out.data(), out.size(), MSG_NOSIGNAL) < 0) {}
+      }
+      close(c);
+    });
+  const auto e = what_of_open(o);
+  peer.join();
+  close(l);
+  EXPECT_NE(e.find("wire version 2"), std::string::npos) << e;
+  EXPECT_NE(e.find("speaks another protocol"), std::string::npos) << e;
+  EXPECT_NE(e.find(kInstall), std::string::npos) << e;
+}
+
+TEST(DaemonLink, ANegativeGripperMapReachesTheDaemon)
+{
+  Scratch tmp;
+  auto o = sim_options(tmp);
+  o.gripper_map = "-0.03,0.01";
+  const auto argv = maker_arm_hardware::serve_argv(o);
+  EXPECT_NE(std::find(argv.begin(), argv.end(), "--gripper_map=-0.03,0.01"), argv.end());
+  auto link = DaemonLink::open(o);
+  EXPECT_EQ(link->poll().mode, w::Mode::Holding);
 }
 
 TEST(DaemonLink, ANanCommandGivesTheRefusedMode)
@@ -206,7 +273,7 @@ TEST(MakerArmSystem, RtAndPersistTakeOnlyTrueOrFalse)
   EXPECT_EQ(MakerArmSystem().init(p), MakerArmSystem::CallbackReturn::ERROR);
 }
 
-TEST(MakerArmSystem, ActivatesAtTheMeasuredPoseAndANanSendsNothing)
+TEST(MakerArmSystem, ActivatesAtTheMeasuredPoseAndANanOrInfSendsNothing)
 {
   using hardware_interface::return_type;
   Scratch tmp;
@@ -223,9 +290,11 @@ TEST(MakerArmSystem, ActivatesAtTheMeasuredPoseAndANanSendsNothing)
   const double q = sys.get_state("link_004_joint/position");
   EXPECT_NEAR(sys.get_command("link_004_joint/position"), q, 1e-3);
   EXPECT_EQ(sys.write(t, dt), return_type::OK);
-  sys.set_command("link_004_joint/position", std::nan(""));
-  EXPECT_EQ(sys.write(t, dt), return_type::OK);
-  EXPECT_EQ(sys.read(t, dt), return_type::OK) << "a NaN must not reach the daemon";
+  for (const double bad : {std::nan(""), HUGE_VAL}) {
+    sys.set_command("link_004_joint/position", bad);
+    EXPECT_EQ(sys.write(t, dt), return_type::OK);
+    EXPECT_EQ(sys.read(t, dt), return_type::OK) << bad << " must not reach the daemon";
+  }
   sys.set_command("link_004_joint/position", q + 0.2);
   EXPECT_EQ(sys.write(t, dt), return_type::OK);
   EXPECT_EQ(sys.read(t, dt), return_type::ERROR) << "a jump gives mode refused";

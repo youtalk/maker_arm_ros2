@@ -3,7 +3,10 @@ on: [push, pull_request]
 jobs:
   build-test:
     runs-on: ubuntu-latest
-    container: ros:jazzy
+    container:
+      image: ros:jazzy
+      # tini as PID 1 reaps the test daemons, which the plugin's double fork gives to PID 1.
+      options: --init
     steps:
       - uses: actions/checkout@v4
         with:

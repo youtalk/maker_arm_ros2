@@ -187,8 +187,8 @@ return_type MakerArmSystem::write(const rclcpp::Time &, const rclcpp::Duration &
   std::array<double, 7> q;
   for (size_t j = 0; j < q.size(); ++j) {
     std::ignore = get_command(commands_[j], q[j], true);
-    // NaN is a controller with no target yet: send nothing, and the daemon holds.
-    if (std::isnan(q[j])) {return return_type::OK;}
+    // NaN is a controller with no target yet. Never send a NaN or an Inf: the daemon holds.
+    if (!std::isfinite(q[j])) {return return_type::OK;}
   }
   try {
     link_->command(q);

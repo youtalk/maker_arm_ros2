@@ -158,14 +158,15 @@ uint64_t options_digest(const DaemonOptions & o)
 
 std::vector<std::string> serve_argv(const DaemonOptions & o)
 {
-  std::vector<std::string> a = {o.executable, "serve", "--interface", o.interface};
-  for (const auto & [flag, value] : {std::pair{"--profile", o.profile},
-      {"--dynamics", o.dynamics}, {"--params", o.params}, {"--residual", o.residual},
-      {"--gripper_map", o.gripper_map}})
+  // `--flag=value`: a value that starts with '-' (a negative gripper slope, a path) stays a value.
+  std::vector<std::string> a = {o.executable, "serve", "--interface=" + o.interface};
+  for (const auto & [flag, value] : {std::pair{"--profile=", o.profile},
+      {"--dynamics=", o.dynamics}, {"--params=", o.params}, {"--residual=", o.residual},
+      {"--gripper_map=", o.gripper_map}})
   {
-    if (!value.empty()) {a.insert(a.end(), {flag, value});}
+    if (!value.empty()) {a.push_back(flag + value);}
   }
-  a.insert(a.end(), {"--socket", socket_of(o)});
+  a.push_back("--socket=" + socket_of(o));
   if (o.rt) {a.push_back("--rt");}
   if (o.persist) {a.push_back("--persist");}
   return a;
@@ -192,7 +193,9 @@ std::unique_ptr<DaemonLink> DaemonLink::open(
       if (std::chrono::steady_clock::now() >= end) {
         throw std::runtime_error(
                 "no daemon answered on " + socket + " within " +
-                std::to_string(spawn_wait.count()) + " s: see " + log);
+                std::to_string(spawn_wait.count()) + " s: see " + log +
+                ". An older maker-arm-cli refuses these flags. Install the pinned one with `" +
+                kInstall + "`.");
       }
       std::this_thread::sleep_for(kRetry);
     }
@@ -206,7 +209,9 @@ std::unique_ptr<DaemonLink> DaemonLink::open(
   } catch (const std::runtime_error & e) {
     throw std::runtime_error(
             std::string(e.what()) + " on " + socket +
-            ": another client is connected, or the daemon speaks another protocol: see " + log);
+            ": another client is connected, or the daemon speaks another protocol: see " + log +
+            ". For another protocol, install the daemon this plugin speaks to with `" + kInstall +
+            "`.");
   }
   if (s.digest != want) {
     throw std::runtime_error(
