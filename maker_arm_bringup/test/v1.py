@@ -1,4 +1,7 @@
-"""Helpers of the V1 checks on SimArm. maker-arm-cli must be on PATH."""
+"""Helpers of the V1 checks on SimArm. maker-arm-cli must be on PATH.
+
+Import it before any process starts: the environment it sets at import time reaches every one.
+"""
 
 import json
 import os
@@ -13,6 +16,10 @@ ANSI = re.compile(r"\x1b\[[0-9;]*m")  # ros2 control colors its output even into
 # The plugin and maker-arm-cli put the sim socket there. CI containers do not set it.
 if "XDG_RUNTIME_DIR" not in os.environ:
     os.environ["XDG_RUNTIME_DIR"] = tempfile.mkdtemp(prefix="v1-")
+# A private ROS graph: the shell's domain can hold another stack with the same node names
+# (/controller_manager, /servo_node). Overwrite, the shell may export its own domain.
+os.environ["ROS_DOMAIN_ID"] = "87"
+os.environ["ROS_AUTOMATIC_DISCOVERY_RANGE"] = "LOCALHOST"
 
 
 def wait_for_controllers(timeout=120.0):
