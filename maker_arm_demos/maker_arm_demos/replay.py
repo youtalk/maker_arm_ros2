@@ -19,6 +19,7 @@ import argparse
 import copy
 from dataclasses import replace
 import json
+import math
 import os
 import signal
 import time
@@ -86,9 +87,11 @@ def check_limits(record, joints):
 def check_start(measured, record):
     """Raise ValueError unless every arm joint of measured ({name: rad}) is near the start."""
     off = {n: abs(measured[n] - q) for n, q in zip(record.joint_names, record.start())}
-    worst = max(off, key=off.get)
-    if not off[worst] <= START_TOL_RAD:  # also false for NaN
-        raise ValueError(f'{worst} is {off[worst]:.3f} rad from the record start, over '
+    # A NaN joint (a state interface the hardware has not written yet) is an unknown pose.
+    # max() never picks a NaN, so name it first.
+    bad = [n for n, d in off.items() if math.isnan(d)] or [max(off, key=off.get)]
+    if any(not d <= START_TOL_RAD for d in off.values()):  # false for NaN too
+        raise ValueError(f'{bad[0]} is {off[bad[0]]:.3f} rad from the record start, over '
                          f'{START_TOL_RAD} rad (--approach moves it there)')
 
 

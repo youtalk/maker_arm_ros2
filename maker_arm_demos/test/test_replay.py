@@ -36,6 +36,25 @@ def test_replay_refuses_a_start_farther_than_the_tolerance():
         check_start({**measured, 'link_004_joint': 2.05 + 0.03}, record())
 
 
+def test_replay_refuses_a_start_just_past_the_tolerance():
+    measured = dict(zip(ARM, READY))
+    check_start({n: q + 0.019 for n, q in measured.items()}, record())  # every joint within
+    with pytest.raises(ValueError, match='link_005_joint'):
+        check_start({**measured, 'link_005_joint': -1.3 + 0.021}, record())
+
+
+def test_replay_refuses_an_unknown_joint_anywhere():
+    """ros2_control state interfaces read NaN until the hardware writes them."""
+    measured = dict(zip(ARM, READY))
+    for name in ('link_004_joint', 'link_007_joint'):  # a middle joint and the last one
+        with pytest.raises(ValueError, match=name):
+            check_start({**measured, name: float('nan')}, record())
+    # The NaN joint is named, not a finite joint that is also too far.
+    with pytest.raises(ValueError, match='link_006_joint is nan'):
+        check_start({**measured, 'link_003_joint': -1.79 + 0.5,
+                     'link_006_joint': float('nan')}, record())
+
+
 def test_replay_refuses_a_point_outside_the_moveit_limits():
     check_limits(record(), JOINTS)
     outside = [0.0, 0.0, 2.05, -1.3, -0.22, 0.0]  # link_003_joint stops at -0.05
