@@ -125,13 +125,13 @@ def test_the_ros2_control_block_has_the_seven_joints_and_the_parameters():
     assert not render(use_ros2_control="false").getElementsByTagName("ros2_control")
 
 
-def test_the_daemon_files_are_the_labs_exports():
+def test_the_daemon_files_are_the_cli_exports():
     d = PKG / "config" / "daemon"
     profile = json.loads((d / "sim_profile.json").read_text())
     assert {"joints", "control_rate_hz", "max_velocity", "limit_margin"} <= set(profile)
     assert len(profile["joints"]) == 7
     dyn = json.loads((d / "dynamics_urdf.json").read_text())
     assert {"mount_rpy", "links", "gravity", "bodies", "friction", "armature", "provenance"} == set(dyn)
-    assert dyn["provenance"]["source"] == "urdf"
+    assert dyn["provenance"]["source"] == "urdf" and len(dyn["provenance"]["urdf_sha256"]) == 64
     assert len(dyn["links"]) == 6 and len(dyn["bodies"]) >= 6
     assert np.allclose(dyn["mount_rpy"], (math.pi / 2, 0, math.pi))
