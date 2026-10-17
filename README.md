@@ -151,7 +151,12 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
 9. In RViz, open the MotionPlanning panel. Set the velocity and acceleration scaling to 0.1. Plan and execute the named pose `home`.
 10. Compare the real arm with RViz. If they differ, stop. Support the arm and release it. A bad zero or a wrong joint map causes this.
 11. Only after the arm matches RViz, try other moves. The default scaling is 0.2.
-12. To use nominal caps, make a second profile with `--caps 1.0`. Launch with it only after the arm works well at caps 0.5.
+12. Use nominal caps only after the arm matches RViz and finishes the moves of steps 9 and 11 at caps 0.5. Write the nominal profile to a second file, so the caps 0.5 profile stays.
+
+    ```sh
+    maker-arm-cli export --calibration CAL.json --caps 1.0 --out ~/maker_arm/real_profile_nominal.json
+    ros2 launch maker_arm_bringup real.launch.py profile:=$HOME/maker_arm/real_profile_nominal.json rviz:=true
+    ```
 
 13. At the end of the session, support the arm. Then release it.
 
