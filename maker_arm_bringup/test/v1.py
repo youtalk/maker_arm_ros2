@@ -1,0 +1,53 @@
+"""Helpers of the V1 checks on SimArm. maker-arm-cli must be on PATH."""
+
+import json
+import os
+import re
+import subprocess
+import tempfile
+import time
+
+CONTROLLERS = ("joint_state_broadcaster", "arm_controller", "gripper_controller")
+ANSI = re.compile(r"\x1b\[[0-9;]*m")  # ros2 control colors its output even into a pipe
+
+# The plugin and maker-arm-cli put the sim socket there. CI containers do not set it.
+if "XDG_RUNTIME_DIR" not in os.environ:
+    os.environ["XDG_RUNTIME_DIR"] = tempfile.mkdtemp(prefix="v1-")
+
+
+def wait_for_controllers(timeout=120.0):
+    deadline = time.monotonic() + timeout
+    out = ""
+    while time.monotonic() < deadline:
+        try:
+            out = subprocess.run(["ros2", "control", "list_controllers"], capture_output=True,
+                                 text=True, timeout=30).stdout
+        except subprocess.TimeoutExpired:
+            continue
+        rows = (line.split() for line in ANSI.sub("", out).splitlines())
+        state = {r[0]: r[-1] for r in rows if r}
+        if all(state.get(c) == "active" for c in CONTROLLERS):
+            return
+        time.sleep(1.0)
+    raise TimeoutError(f"the controllers are not active after {timeout} s: {out!r}")
+
+
+def status():
+    out = subprocess.run(["maker-arm-cli", "status", "--interface", "sim"], capture_output=True,
+                         text=True, timeout=10, check=True).stdout
+    return json.loads(out.split("STATUS ", 1)[1])
+
+
+def goals(count, seed=0):
+    """Run random_goals and return its token and payload. The token line goes to the log."""
+    cmd = ["ros2", "run", "maker_arm_demos", "random_goals",
+           "--count", str(count), "--seed", str(seed)]
+    out = subprocess.run(cmd, capture_output=True, text=True, timeout=30 + 20 * count).stdout
+    line = next(line for line in out.splitlines() if line.startswith("GOALS_"))
+    print(line, flush=True)
+    token, payload = line.split(" ", 1)
+    return token, json.loads(payload)
+
+
+def max_dq(a, b):
+    return max(abs(x - y) for x, y in zip(a, b, strict=True))
