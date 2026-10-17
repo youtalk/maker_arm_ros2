@@ -1,0 +1,42 @@
+import importlib.util
+from pathlib import Path
+
+import pytest
+from launch import LaunchContext
+from launch_ros.actions import Node
+
+LAUNCH = Path(__file__).resolve().parents[1] / "launch"
+
+
+def load(name):
+    spec = importlib.util.spec_from_file_location(name, LAUNCH / f"{name}.launch.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@pytest.mark.parametrize("name", ["stack", "simarm", "real"])
+def test_each_launch_file_builds_a_description(name):
+    assert load(name).generate_launch_description().entities
+
+
+def test_the_servo_node_keeps_the_conduit_names():
+    nodes = [e for e in load("stack").generate_launch_description().entities if isinstance(e, Node)]
+    servo = [n for n in nodes if n.node_package == "moveit_servo"]
+    assert len(servo) == 1 and servo[0]._Node__node_name == "servo_node"
+    assert {n.node_executable for n in nodes} >= {"move_group", "ros2_control_node", "spawner"}
+
+
+def test_real_launch_names_the_session_for_a_missing_file():
+    real = load("real")
+    ctx = LaunchContext()
+    ctx.launch_configurations.update(
+        {"interface": "can0", "persist": "false", "rviz": "false",
+         **{k: "/nonexistent/" + v[0] for k, v in real.FILES.items()}})
+    with pytest.raises(RuntimeError) as e:
+        real.launch_setup(ctx)
+    msg = str(e.value)
+    for session in ("MS5 session 2", "MS5 session 4", "MS5 session 5"):
+        assert session in msg
+    for f in ("real_profile_caps050.json", "gripper_map.txt", "dynamics_ident.json", "params_shipped.json"):
+        assert f in msg
