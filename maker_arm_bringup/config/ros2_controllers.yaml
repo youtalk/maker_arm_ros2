@@ -1,0 +1,37 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 100
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+    arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+    gripper_controller:
+      type: position_controllers/GripperActionController
+
+arm_controller:
+  ros__parameters:
+    joints:
+      - link_002_joint
+      - link_003_joint
+      - link_004_joint
+      - link_005_joint
+      - link_006_joint
+      - link_007_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    # Servo streams trajectories whose last point still moves. Without this, the controller
+    # rejects every one of them (V2). It is safe here: the only command interface is position,
+    # so no velocity reaches the arm, and the daemon refuses any arm target more than 0.05 rad
+    # from the last one and holds. Check this on the real arm in V3.
+    allow_nonzero_velocity_at_trajectory_end: true
+
+gripper_controller:
+  ros__parameters:
+    joint: gripper_left_joint
+    goal_tolerance: 0.002
+    allow_stalling: true
+    # SimArm reports no jaw velocity, so a goal ends as a stall success after stall_timeout.
+    stall_timeout: 2.0  # INITIAL: V2 measures the jaw speed on the MuJoCo plant

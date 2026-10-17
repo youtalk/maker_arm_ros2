@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>maker_arm_moveit_config</name>
+  <version>0.1.0</version>
+  <description>MoveIt 2 and MoveIt Servo configuration of the MakerMods Maker Arm</description>
+  <maintainer email="youtalk@users.noreply.github.com">Yutaka Kondo</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>maker_arm_description</exec_depend>
+  <exec_depend>moveit_kinematics</exec_depend>
+  <exec_depend>moveit_planners_ompl</exec_depend>
+  <exec_depend>moveit_ros_move_group</exec_depend>
+  <exec_depend>moveit_servo</exec_depend>
+  <exec_depend>moveit_simple_controller_manager</exec_depend>
+  <exec_depend>pilz_industrial_motion_planner</exec_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>ament_index_python</test_depend>
+  <test_depend>maker_arm_description</test_depend>
+  <test_depend>moveit_servo</test_depend>
+  <test_depend>python3-yaml</test_depend>
+  <test_depend>xacro</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -1,0 +1,7 @@
+<library path="maker_arm_hardware">
+  <class name="maker_arm_hardware/MakerArmSystem"
+         type="maker_arm_hardware::MakerArmSystem"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>The Maker Arm as a client of the maker-arm-cli serve daemon.</description>
+  </class>
+</library>

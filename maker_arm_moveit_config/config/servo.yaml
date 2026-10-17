@@ -1,0 +1,21 @@
+# Flat parameters of moveit_servo 2.12 (Jazzy), read from
+# /opt/ros/jazzy/share/moveit_servo/config/servo_parameters.yaml. That version has no
+# planning_frame, ee_frame or robot_link_command_frame parameter: Servo takes the planning
+# frame (mount_link) and the end-effector frame (grasp_center) from the "arm" chain in the SRDF.
+move_group_name: arm
+incoming_command_timeout: 0.5
+command_in_type: speed_units
+# The Butterworth filter scaled the commanded speed by 0.571: V2 measured 28.6 of 50 mm/s.
+# Without the filter, these bound one step: Servo scales to the planning velocity limits, the
+# daemon refuses an arm target more than 0.05 rad from the last one and holds, Tracking's
+# e_max clamps the position error (and so the spring torque), and the command clamp caps every
+# motor command. Check this on the real arm in V3.
+use_smoothing: false
+check_collisions: true
+command_out_type: trajectory_msgs/JointTrajectory
+command_out_topic: /arm_controller/joint_trajectory
+joint_topic: /joint_states
+publish_period: 0.01
+publish_joint_positions: true
+publish_joint_velocities: true
+publish_joint_accelerations: false

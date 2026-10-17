@@ -1,0 +1,53 @@
+# Written by scripts/limits_from_profiles.py. Do not edit by hand.
+default_velocity_scaling_factor: 0.2
+default_acceleration_scaling_factor: 0.2
+joint_limits:
+  link_002_joint:
+    min_position: -2.7500000
+    max_position: 2.7500000
+    has_velocity_limits: true
+    max_velocity: 2.0  # INITIAL: V2 measures the real speed ceiling
+    has_acceleration_limits: true
+    max_acceleration: 4.0  # INITIAL: V2 measures the real acceleration ceiling
+  link_003_joint:
+    min_position: -3.0900000
+    max_position: -0.0500000
+    has_velocity_limits: true
+    max_velocity: 2.0  # INITIAL: V2 measures the real speed ceiling
+    has_acceleration_limits: true
+    max_acceleration: 4.0  # INITIAL: V2 measures the real acceleration ceiling
+  link_004_joint:
+    min_position: 0.0500000
+    max_position: 3.0900000
+    has_velocity_limits: true
+    max_velocity: 2.0  # INITIAL: V2 measures the real speed ceiling
+    has_acceleration_limits: true
+    max_acceleration: 4.0  # INITIAL: V2 measures the real acceleration ceiling
+  link_005_joint:
+    min_position: -1.5500000
+    max_position: 1.6800000
+    has_velocity_limits: true
+    max_velocity: 2.0  # INITIAL: V2 measures the real speed ceiling
+    has_acceleration_limits: true
+    max_acceleration: 4.0  # INITIAL: V2 measures the real acceleration ceiling
+  link_006_joint:
+    min_position: -1.5200000
+    max_position: 1.5200000
+    has_velocity_limits: true
+    max_velocity: 2.0  # INITIAL: V2 measures the real speed ceiling
+    has_acceleration_limits: true
+    max_acceleration: 4.0  # INITIAL: V2 measures the real acceleration ceiling
+  link_007_joint:
+    min_position: -2.6500000
+    max_position: 2.6500000
+    has_velocity_limits: true
+    max_velocity: 2.0  # INITIAL: V2 measures the real speed ceiling
+    has_acceleration_limits: true
+    max_acceleration: 4.0  # INITIAL: V2 measures the real acceleration ceiling
+  gripper_left_joint:
+    min_position: 0.0012765
+    max_position: 0.0511360
+    has_velocity_limits: true
+    max_velocity: 0.05  # INITIAL: V2 measures the real speed ceiling
+    has_acceleration_limits: true
+    max_acceleration: 0.5  # INITIAL: V2 measures the real acceleration ceiling

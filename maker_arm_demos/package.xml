@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>maker_arm_demos</name>
+  <version>0.1.0</version>
+  <description>Demos of the MakerMods Maker Arm on MoveIt</description>
+  <maintainer email="youtalk@users.noreply.github.com">Yutaka Kondo</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>action_msgs</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>control_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>maker_arm_description</exec_depend>
+  <exec_depend>maker_arm_moveit_config</exec_depend>
+  <exec_depend>maker_arm_mujoco</exec_depend>
+  <exec_depend>moveit_msgs</exec_depend>
+  <exec_depend>moveit_py</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>shape_msgs</exec_depend>
+  <exec_depend>tf2_ros_py</exec_depend>
+  <exec_depend>trajectory_msgs</exec_depend>
+  <exec_depend>xacro</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
