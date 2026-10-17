@@ -30,7 +30,7 @@ using maker_arm_hardware::DaemonOptions;
 
 const char kInstall[] =
   "git clone https://github.com/youtalk/maker-arm-rs && "
-  "git -C maker-arm-rs checkout fdda16e5bf05ee3a658bbc9de13dce84640dff33 && "
+  "git -C maker-arm-rs checkout b2bae867ec099d3bf7bb650adae70ec04782e9d0 && "
   "cargo install --locked --path maker-arm-rs/crates/maker-arm-cli";
 
 namespace

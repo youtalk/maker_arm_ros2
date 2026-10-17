@@ -22,7 +22,7 @@ jobs:
           apt-get install -y git rustc-1.85 cargo-1.85
           src=$(mktemp -d)
           git clone https://github.com/youtalk/maker-arm-rs "$src/maker-arm-rs"
-          git -C "$src/maker-arm-rs" checkout fdda16e5bf05ee3a658bbc9de13dce84640dff33
+          git -C "$src/maker-arm-rs" checkout b2bae867ec099d3bf7bb650adae70ec04782e9d0
           PATH=/usr/lib/rust-1.85/bin:$PATH cargo install --locked --path "$src/maker-arm-rs/crates/maker-arm-cli"
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       # mujoco is not a rosdep key. The runner has no GPU, so the plant's camera test renders
