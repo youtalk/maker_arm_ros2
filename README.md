@@ -104,40 +104,49 @@ The real-arm path is not ready. The default files of `real.launch.py` ship after
 
 If the real arm loses power or CAN, it can fall and break. Software cannot prevent this. Follow the steps in order.
 
-1. Support the arm with your hand or a stand. Do this before the first launch and before every release.
-2. Ask the daemon for its status. A daemon can already hold the arm.
+1. Keep your runtime directory after you log out. Do this once on each computer.
+
+    ```sh
+    loginctl enable-linger $USER
+    ```
+
+    When your last login session ends, logind removes `$XDG_RUNTIME_DIR`. The daemon's socket is in that directory. Without the socket, the daemon keeps holding the arm, but no launch and no `release` can reach it.
+
+2. Support the arm with your hand or a stand. Do this before the first launch and before every release.
+3. Ask the daemon for its status. A daemon can already hold the arm.
 
     ```sh
     maker-arm-cli status --interface can0
     ```
 
-    If it prints a `STATUS` line, a daemon holds the arm. Do not run `doctor`. Go to step 4. In that case `doctor` refuses anyway, because the daemon holds the bus lock.
+    If it prints a `STATUS` line, a daemon holds the arm. Do not run `doctor`. Go to step 5. In that case `doctor` refuses anyway, because the daemon holds the bus lock.
 
-3. Run the daemon's check on the CAN interface. If it reports a problem, stop here.
+4. Run the daemon's check on the CAN interface. If it reports a problem, stop here.
 
     ```sh
     maker-arm-cli --can can0 doctor
     ```
 
-4. Launch the stack. By default it starts at caps 0.5 of the nominal gains and torque caps.
+5. Launch the stack. By default it starts at caps 0.5 of the nominal gains and torque caps.
 
     ```sh
     ros2 launch maker_arm_bringup real.launch.py rviz:=true
     ```
 
-5. If the launch stops with a message that names a missing file, stop. The shipped files are not installed. The dynamics file and the params file ship as a pair from the same identification. Never mix files from different identifications.
-6. Enabling the motors holds the measured pose. The arm does not move yet.
-7. In RViz, open the MotionPlanning panel. Set the velocity and acceleration scaling to 0.1. Plan and execute the named pose `home`.
-8. Compare the real arm with RViz. If they differ, stop. Support the arm and release it. A bad zero or a wrong joint map causes this.
-9. Only after the arm matches RViz, try other moves. The default scaling is 0.2.
-10. To use nominal caps, launch with the nominal profile. The file ships with the others after the MS5 sessions.
+6. If the launch stops with a message that names a missing file, stop. The shipped files are not installed. The dynamics file and the params file ship as a pair from the same identification. Never mix files from different identifications.
+7. If the launch says that no daemon answered, read the log that the message names. To find the process that holds the CAN bus, run `ss -xlp | grep maker-arm-bus-can0`. A daemon can hold the arm with no socket. Support the arm before you stop that process, because the arm then drops.
+8. Enabling the motors holds the measured pose. The arm does not move yet.
+9. In RViz, open the MotionPlanning panel. Set the velocity and acceleration scaling to 0.1. Plan and execute the named pose `home`.
+10. Compare the real arm with RViz. If they differ, stop. Support the arm and release it. A bad zero or a wrong joint map causes this.
+11. Only after the arm matches RViz, try other moves. The default scaling is 0.2.
+12. To use nominal caps, launch with the nominal profile. The file ships with the others after the MS5 sessions.
 
     ```sh
     ros2 launch maker_arm_bringup real.launch.py \
         profile:=$(ros2 pkg prefix maker_arm_description)/share/maker_arm_description/config/daemon/real_profile_nominal.json
     ```
 
-11. At the end of the session, support the arm. Then release it.
+13. At the end of the session, support the arm. Then release it.
 
     ```sh
     ros2 run maker_arm_bringup release
