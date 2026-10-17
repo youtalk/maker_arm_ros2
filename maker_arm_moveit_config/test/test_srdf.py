@@ -33,9 +33,11 @@ def test_the_arm_group_is_the_mount_to_grasp_center_chain():
 def test_the_named_states():
     arm = states("arm")
     assert arm["ready"] == dict(zip(ARM, (0.0, -1.79, 2.05, -1.3, -0.22, 0.0)))
+    # 0.5 mm inside the jaw limits: an empty close lands a few um past its target.
     jaw = LIMITS["gripper_left_joint"]
-    for name, value in (("open", jaw["max_position"]), ("closed", jaw["min_position"])):
-        assert states("gripper")[name] == {"gripper_left_joint": value}
+    want = {"open": jaw["max_position"] - 0.0005, "closed": jaw["min_position"] + 0.0005}
+    for name, value in want.items():
+        assert abs(states("gripper")[name]["gripper_left_joint"] - value) < 1e-9, name
 
 
 def test_the_named_states_lie_inside_the_moveit_limits():

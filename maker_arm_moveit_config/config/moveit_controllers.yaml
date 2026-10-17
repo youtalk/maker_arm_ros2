@@ -20,3 +20,5 @@ moveit_simple_controller_manager:
     default: true
     joints:
       - gripper_left_joint
+    # INITIAL: V2 measured a 5.62 s close against a 5.9 s allowance
+    allowed_execution_duration_scaling: 1.5
