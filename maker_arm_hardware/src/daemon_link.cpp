@@ -177,7 +177,9 @@ std::vector<std::string> serve_argv(const DaemonOptions & o)
 std::unique_ptr<DaemonLink> DaemonLink::open(
   const DaemonOptions & o, std::chrono::seconds spawn_wait)
 {
-  // Before any spawn: a missing file or socket directory fails here, with its name.
+  // Before any spawn, a missing file fails here, with its name. A missing socket directory
+  // does not: connect reads it as no daemon and spawns one. The daemon refuses the directory
+  // before it opens the bus and exits, and the spawn timeout then points to its log.
   const uint64_t want = options_digest(o);
   const auto socket = socket_of(o);
   const auto log = log_of(o);
