@@ -27,5 +27,11 @@ jobs:
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - name: Build
         run: . /opt/ros/jazzy/setup.sh && colcon build
+      # The results print even when a test fails, and the job still fails.
       - name: Test
-        run: . /opt/ros/jazzy/setup.sh && colcon test && colcon test-result --verbose
+        run: |
+          . /opt/ros/jazzy/setup.sh
+          rc=0
+          colcon test --return-code-on-test-failure || rc=$?
+          colcon test-result --verbose || rc=1
+          exit $rc
