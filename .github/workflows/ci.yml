@@ -25,10 +25,18 @@ jobs:
           git -C "$src/maker-arm-rs" checkout 31b3584b195bf225d71e5bffdec04c073a640332
           PATH=/usr/lib/rust-1.85/bin:$PATH cargo install --locked --path "$src/maker-arm-rs/crates/maker-arm-cli"
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      # mujoco is not a rosdep key. The runner has no GPU, so the plant's camera test renders
+      # with OSMesa: EGL finds no device in the container.
+      - name: Install MuJoCo
+        run: |
+          apt-get install -y python3-pip libosmesa6
+          pip install --break-system-packages mujoco==3.13.0
       - name: Build
         run: . /opt/ros/jazzy/setup.sh && colcon build
       # The results print even when a test fails, and the job still fails.
       - name: Test
+        env:
+          MUJOCO_GL: osmesa
         run: |
           . /opt/ros/jazzy/setup.sh
           rc=0
