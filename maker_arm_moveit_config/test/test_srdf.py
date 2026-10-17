@@ -33,7 +33,8 @@ def test_the_arm_group_is_the_mount_to_grasp_center_chain():
 def test_the_named_states():
     arm = states("arm")
     assert arm["ready"] == dict(zip(ARM, (0.0, -1.79, 2.05, -1.3, -0.22, 0.0)))
-    for name, value in (("open", 0.0524125), ("closed", 0.0)):
+    jaw = LIMITS["gripper_left_joint"]
+    for name, value in (("open", jaw["max_position"]), ("closed", jaw["min_position"])):
         assert states("gripper")[name] == {"gripper_left_joint": value}
 
 
@@ -57,3 +58,8 @@ def test_home_is_the_zero_pose_pulled_0p1_inside_the_urdf_limits():
 
 def test_collisions_were_generated():
     assert len(ROOT.findall("disable_collisions")) > 20
+
+
+def test_the_fingers_may_touch():
+    pairs = {frozenset((d.get("link1"), d.get("link2"))) for d in ROOT.findall("disable_collisions")}
+    assert frozenset(("gripper_left", "gripper_right")) in pairs

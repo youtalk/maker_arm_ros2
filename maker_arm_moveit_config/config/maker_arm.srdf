@@ -33,11 +33,12 @@
         <joint name="link_006_joint" value="0"/>
         <joint name="link_007_joint" value="0"/>
     </group_state>
+    <!-- open and closed are the jaw limits of joint_limits.yaml, off the daemon's clamp. -->
     <group_state name="open" group="gripper">
-        <joint name="gripper_left_joint" value="0.0524125"/>
+        <joint name="gripper_left_joint" value="0.051136"/>
     </group_state>
     <group_state name="closed" group="gripper">
-        <joint name="gripper_left_joint" value="0"/>
+        <joint name="gripper_left_joint" value="0.0012765"/>
     </group_state>
     <!--END EFFECTOR: Purpose: Represent information about an end effector.-->
     <end_effector name="gripper" parent_link="link_007" group="gripper" parent_group="arm"/>
@@ -49,6 +50,8 @@
     <disable_collisions link1="base_link" link2="link_003" reason="Never"/>
     <disable_collisions link1="desk_link" link2="link_002" reason="Never"/>
     <disable_collisions link1="desk_link" link2="link_003" reason="Never"/>
+    <!-- Not generated: the fingers touch at a fully closed jaw. -->
+    <disable_collisions link1="gripper_left" link2="gripper_right" reason="Adjacent"/>
     <disable_collisions link1="gripper_left" link2="link_003" reason="Never"/>
     <disable_collisions link1="gripper_left" link2="link_004" reason="Never"/>
     <disable_collisions link1="gripper_left" link2="link_005" reason="Never"/>

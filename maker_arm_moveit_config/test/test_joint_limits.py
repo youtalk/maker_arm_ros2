@@ -12,6 +12,7 @@ PROFILES = sorted(DESC.glob("config/daemon/*profile*.json"))
 SCRIPT = PKG / "scripts" / "limits_from_profiles.py"
 MARGIN = 0.05
 ARM = [f"link_00{i}_joint" for i in range(2, 8)]
+JAW_HALF_STROKE = 0.0524125  # maker-arm-cli's provisional grip map
 
 
 def moveit_limits():
@@ -36,6 +37,18 @@ def test_every_moveit_limit_is_inside_every_profile_and_the_urdf():
             lo, hi = limits[name]
             assert lo >= joints[i]["q_lo"] + MARGIN - 1e-9
             assert hi <= joints[i]["q_hi"] - MARGIN + 1e-9
+
+
+def test_the_jaw_limits_keep_the_arm_margin_through_the_provisional_grip_map():
+    lo, hi = moveit_limits()["gripper_left_joint"]
+    for prof in PROFILES:
+        g = json.loads(prof.read_text())["joints"][6]
+        a = 2 * JAW_HALF_STROKE / (g["q_hi"] - g["q_lo"])  # jaw gap per motor rad
+        margin_m = MARGIN * a / 2  # gripper_left_joint is half the gap
+        # 5e-8: the yaml prints 7 decimals
+        assert lo >= margin_m - 5e-8
+        assert hi <= JAW_HALF_STROKE - margin_m + 5e-8
+    assert 0.0 < lo < hi < JAW_HALF_STROKE
 
 
 def test_the_yaml_is_what_the_script_writes(tmp_path):
