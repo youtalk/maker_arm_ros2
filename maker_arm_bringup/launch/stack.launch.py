@@ -65,10 +65,12 @@ def generate_launch_description():
         "controllers": _yaml(mc, "moveit_controllers.yaml"),
     }
     moveit_params = [description, *moveit.values(), {"use_sim_time": False}]
+    # The planning limits, so Servo holds the profile-derived limits and not the URDF's.
     servo_params = [
         description,
         moveit["robot_description_semantic"],
         moveit["robot_description_kinematics"],
+        moveit["robot_description_planning"],
         {"moveit_servo": _yaml(mc, "servo.yaml")},
     ]
     controllers_yaml = os.path.join(share("maker_arm_bringup"), "config", "ros2_controllers.yaml")

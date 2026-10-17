@@ -27,6 +27,14 @@ def test_the_servo_node_keeps_the_conduit_names():
     assert {n.node_executable for n in nodes} >= {"move_group", "ros2_control_node", "spawner"}
 
 
+def test_servo_reads_the_planning_limits():
+    nodes = [e for e in load("stack").generate_launch_description().entities if isinstance(e, Node)]
+    servo = next(n for n in nodes if n.node_package == "moveit_servo")
+    names = {"".join(t.text for t in key) for p in servo._Node__parameters for key in p}
+    for j in range(2, 8):
+        assert f"robot_description_planning.joint_limits.link_00{j}_joint.max_velocity" in names
+
+
 def test_real_launch_names_the_session_for_a_missing_file():
     real = load("real")
     ctx = LaunchContext()
