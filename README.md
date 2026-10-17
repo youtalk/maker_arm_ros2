@@ -19,7 +19,7 @@ These steps are for Ubuntu 24.04 with ROS 2 Jazzy.
 
         sudo apt install rustc-1.85 cargo-1.85 git
         git clone https://github.com/youtalk/maker-arm-rs
-        git -C maker-arm-rs checkout be17836308af8602fee5d319eb1565f30445636d
+        git -C maker-arm-rs checkout 31b3584b195bf225d71e5bffdec04c073a640332
         PATH=/usr/lib/rust-1.85/bin:$PATH cargo install --locked --path maker-arm-rs/crates/maker-arm-cli
 
 3. Add `~/.cargo/bin` to your `PATH`. The plugin starts `maker-arm-cli` from there.
