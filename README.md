@@ -135,7 +135,7 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
 
 6. If the launch stops with a message that names a missing file, stop. The shipped files are not installed. The dynamics file and the params file ship as a pair from the same identification. Never mix files from different identifications.
 7. If the launch says that no daemon answered, read the log that the message names. To find the process that holds the CAN bus, run `ss -xlp | grep maker-arm-bus-can0`. A daemon can hold the arm with no socket. Support the arm before you stop that process, because the arm then drops.
-8. Enabling the motors holds the measured pose. The arm does not move yet.
+8. Enabling the motors holds the measured pose. The daemon also enables a joint that rests up to 0.35 rad outside its soft limits. It then pulls that joint back inside the limits, so that joint can move by up to 0.35 rad. Keep the arm supported until the launch finishes.
 9. In RViz, open the MotionPlanning panel. Set the velocity and acceleration scaling to 0.1. Plan and execute the named pose `home`.
 10. Compare the real arm with RViz. If they differ, stop. Support the arm and release it. A bad zero or a wrong joint map causes this.
 11. Only after the arm matches RViz, try other moves. The default scaling is 0.2.
@@ -178,14 +178,14 @@ Servo halts near the `ready` pose because of a singularity. Before you teleopera
 4. Do not release the arm while it is unsupported. Release only through `ros2 run maker_arm_bringup release`.
 5. Do not kill the daemon and do not cut power or CAN while the motors are on. The arm drops.
 6. Keep a person at the e-stop on the first real runs.
-7. Do not run the stack with files from another arm or with hand-made files. Never mix the dynamics file and the params file of different identifications. If a joint is outside its limits, the daemon refuses to enable. This catches some bad zeros, not all.
+7. Do not run the stack with files from another arm or with hand-made files. Never mix the dynamics file and the params file of different identifications. If a joint is more than 0.35 rad outside its limits, the daemon refuses to enable. This catches some bad zeros, not all.
 8. If the plugin refuses a running daemon, support the arm and run the release step. Then launch again.
 
 What the stack does for you:
 
 - If ROS crashes or stops sending commands, the daemon holds the arm.
 - The daemon refuses a command jump and clamps every command to the profile.
-- Enable holds the measured pose.
+- Enable holds the measured pose, or the nearest pose inside the joint limits.
 - MoveIt keeps a margin inside the joint limits. The collision matrix and a desk object protect the arm and the desk.
 - The gripper squeeze torque is limited.
 
