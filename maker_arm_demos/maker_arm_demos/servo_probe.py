@@ -46,8 +46,10 @@ TARGET = SPEED * PUSH  # 0.2 m
 MAX_ANGLE = 15.0  # deg
 MAX_DISTANCE_ERROR = 0.3  # of TARGET
 STOP_SPEED = 0.005  # m/s
-# One encoder count moves the tip about 0.13 mm. Over 50 ms or more, that reads under 3 mm/s.
-WINDOW = 0.05  # s
+# One encoder count moves the tip about 0.13 mm. Two counts over 50 ms read 5.2 mm/s, so a
+# 50 ms window tested the noise (V2). Over 100 ms they read 2.6 mm/s, and a real 5 mm/s coast
+# still reads 5 mm/s.
+WINDOW = 0.1  # s
 MAX_STOP_MS = 200.0
 # Servo halts when the Jacobian's condition number reaches hard_stop_singularity_threshold
 # (30, the default). At `ready` it is 35.7. From START, a search over this arm's model keeps it
