@@ -196,8 +196,12 @@ std::unique_ptr<DaemonLink> DaemonLink::open(
         throw std::runtime_error(
                 "no daemon answered on " + socket + " within " +
                 std::to_string(spawn_wait.count()) + " s: see " + log +
-                ". An older maker-arm-cli refuses these flags. Install the pinned one with `" +
-                kInstall + "`.");
+                ". Likely causes: another daemon holds the bus lock, a fault on the first "
+                "tick, an enable refused because a joint is outside its limits, or an older "
+                "maker-arm-cli that refuses these flags. Find a running daemon with "
+                "`maker-arm-cli status --interface " + o.interface + "` and the bus holder "
+                "with `ss -xlp | grep maker-arm-bus-" + o.interface + "`. For an older "
+                "maker-arm-cli, install the pinned one with `" + kInstall + "`.");
       }
       std::this_thread::sleep_for(kRetry);
     }

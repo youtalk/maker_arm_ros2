@@ -159,14 +159,19 @@ TEST(DaemonLink, AMissingExecutableNamesTheInstallCommand)
   EXPECT_NE(e.find(kInstall), std::string::npos) << e;
 }
 
-TEST(DaemonLink, ADaemonThatNeverAnswersNamesTheInstallCommand)
+TEST(DaemonLink, ADaemonThatNeverAnswersNamesTheCausesAndTheHints)
 {
-  // As an older maker-arm-cli that refuses the flags: it exits and never binds the socket.
+  // As a daemon that exits before it binds the socket: a held bus lock, a first-tick fault,
+  // an enable refusal or an older maker-arm-cli.
   Scratch tmp;
   auto o = sim_options(tmp);
   o.executable = "/bin/true";
   const auto e = what_of_open(o, std::chrono::seconds(1));
   EXPECT_NE(e.find("no daemon answered"), std::string::npos) << e;
+  EXPECT_NE(e.find(o.log), std::string::npos) << e;
+  EXPECT_NE(e.find("bus lock"), std::string::npos) << e;
+  EXPECT_NE(e.find("`maker-arm-cli status --interface sim`"), std::string::npos) << e;
+  EXPECT_NE(e.find("`ss -xlp | grep maker-arm-bus-sim`"), std::string::npos) << e;
   EXPECT_NE(e.find(kInstall), std::string::npos) << e;
 }
 
