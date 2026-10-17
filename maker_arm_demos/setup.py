@@ -17,5 +17,8 @@ setup(
     description='Demos of the MakerMods Maker Arm on MoveIt',
     license='Apache-2.0',
     extras_require={'test': ['pytest']},
-    entry_points={'console_scripts': ['random_goals = maker_arm_demos.random_goals:main']},
+    entry_points={'console_scripts': [
+        'random_goals = maker_arm_demos.random_goals:main',
+        'servo_probe = maker_arm_demos.servo_probe:main',
+    ]},
 )
