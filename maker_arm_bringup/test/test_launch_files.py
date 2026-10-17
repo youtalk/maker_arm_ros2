@@ -16,7 +16,7 @@ def load(name):
     return mod
 
 
-@pytest.mark.parametrize("name", ["stack", "simarm", "real"])
+@pytest.mark.parametrize("name", ["stack", "simarm", "real", "sim"])
 def test_each_launch_file_builds_a_description(name):
     assert load(name).generate_launch_description().entities
 
@@ -66,3 +66,14 @@ def test_real_launch_passes_residual_and_rt_to_the_stack(tmp_path):
     (stack,) = real.launch_setup(ctx)
     args = dict(stack.launch_arguments)
     assert args["residual"] == "/r.json" and args["rt"] == "true"
+
+
+def test_sim_starts_the_plant_and_waits_for_plant_ready():
+    from launch.actions import RegisterEventHandler
+    from launch.event_handlers import OnProcessIO
+
+    entities = load("sim").generate_launch_description().entities
+    plants = [e for e in entities if isinstance(e, Node) and e.node_package == "maker_arm_mujoco"]
+    assert len(plants) == 1 and plants[0].node_executable == "plant"
+    handlers = [e.event_handler for e in entities if isinstance(e, RegisterEventHandler)]
+    assert any(isinstance(h, OnProcessIO) for h in handlers)
