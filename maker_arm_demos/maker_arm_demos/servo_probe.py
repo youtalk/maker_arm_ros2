@@ -59,8 +59,9 @@ WAIT = 10.0  # s for each server, topic, transform and goal
 def judge(track, t_release):
     """Score a tip track [(t in s, xyz in mount_link)] by Conduit 3.0 spec G2.
 
-    The tip stops at the first sample at or after the release from which it moves slower
-    than STOP_SPEED over the next WINDOW.
+    The tip stops at the start of the first WINDOW after the release from which every later
+    WINDOW, up to the end of the track, is slower than STOP_SPEED. A window's speed is its
+    chord over its time: a path length would read one encoder count of noise as motion.
     """
     t = np.array([s[0] for s in track])
     p = np.array([s[1] for s in track])
@@ -68,13 +69,13 @@ def judge(track, t_release):
     dist = float(np.linalg.norm(d))
     angle = float(np.degrees(np.arccos(np.clip(d[0] / dist, -1.0, 1.0)))) if dist else 180.0
     stop_ms = None
-    for i in np.flatnonzero(t >= t_release):
+    for i in np.flatnonzero(t >= t_release)[::-1]:  # from the end back to the last fast window
         j = np.searchsorted(t, t[i] + WINDOW)
         if j == len(t):
+            continue  # less than one WINDOW of track is left
+        if np.linalg.norm(p[j] - p[i]) / (t[j] - t[i]) >= STOP_SPEED:
             break
-        if np.linalg.norm(p[j] - p[i]) / (t[j] - t[i]) < STOP_SPEED:
-            stop_ms = round(1000.0 * (t[i] - t_release), 1)
-            break
+        stop_ms = round(1000.0 * (t[i] - t_release), 1)
     ratio = dist / TARGET
     return {
         'angle_deg': round(angle, 2),

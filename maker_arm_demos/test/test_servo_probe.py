@@ -46,3 +46,26 @@ def test_encoder_noise_after_the_stop_is_not_motion():
     verdict = judge(noisy, RELEASE)
     assert verdict['ok']
     assert verdict['stop_ms'] < 1.0
+
+
+def moved(track, legs):
+    """Add `legs` [(start, end, velocity in m/s along x)], in s after the release, to a track."""
+    out = []
+    for t, p in track:
+        dx = sum(v * (min(max(t - RELEASE, a), b) - a) for a, b, v in legs)
+        out.append((t, p + np.array([dx, 0.0, 0.0])))
+    return out
+
+
+def test_a_pause_then_more_motion_fails():
+    """Still from 0 to 100 ms after the release, then 50 mm/s from 100 to 400 ms."""
+    verdict = judge(moved(track(), [(0.1, 0.4, 0.05)]), RELEASE)
+    assert not verdict['ok']
+    assert verdict['stop_ms'] >= 400.0
+
+
+def test_a_reversal_fails():
+    """It coasts on to 110 ms after the release, then runs back at 50 mm/s until 400 ms."""
+    verdict = judge(moved(track(coast=0.11), [(0.11, 0.4, -0.05)]), RELEASE)
+    assert not verdict['ok']
+    assert verdict['stop_ms'] >= 400.0
