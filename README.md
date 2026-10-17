@@ -4,7 +4,7 @@ ROS 2 Jazzy packages for the MakerMods Maker Arm. They hold the robot descriptio
 
 The plugin talks to a daemon from maker-arm-rs (`maker-arm-cli serve`). The daemon owns the motors. If ROS stops, the daemon keeps holding the arm.
 
-Status: the stack is verified in simulation. It is not yet verified on a real arm. Treat the real-arm section as a first trial and read the safety rules below before you start.
+Status: the stack is verified in simulation. It is not yet verified on a real arm. The real-arm files ship after the MS5 sessions, so the real-arm path is not ready. Do not run `real.launch.py` with hand-made profile, dynamics or params files.
 
 ## Install
 
@@ -76,29 +76,32 @@ To replay a record at half speed, run the next command. The replay refuses to st
 
     ros2 run maker_arm_demos replay /tmp/pick_place.json
 
-If you want the replay to move the arm to the start pose first, add `--approach`. It plans at scaling 0.1 and waits for you to type `yes`.
+If you want the replay to move the arm to the start pose first, add `--approach`. It plans at scaling 0.1. It asks you to type `yes` twice, before the approach and before the replay.
 
 ## The real arm
+
+The real-arm path is not ready. The default files of `real.launch.py` ship after the MS5 sessions. Until then, the launch stops and names the missing file. Do not run it with hand-made profile, dynamics or params files. The steps below are for the time when the shipped files exist.
 
 The real arm can fall and break if it loses power or CAN. Software cannot prevent this. Follow the steps in order.
 
 1. Support the arm with your hand or a stand. Do this before the first launch and before every release.
-2. Run the daemon's check. If it reports a problem, stop here.
+2. Run the daemon's check on the CAN interface. If it reports a problem, stop here.
 
-        maker-arm-cli doctor
+        maker-arm-cli --can can0 doctor
 
-3. Launch the stack. The default profile limits the caps to 0.5 of the nominal profile.
+3. Launch the stack. By default it starts at caps 0.5 of the nominal gains and torque caps.
 
         ros2 launch maker_arm_bringup real.launch.py rviz:=true
 
-4. If the launch stops with a message that names a missing file, the file does not exist yet. The default profile, dynamics, parameter and gripper map files come from the MS5 sessions on the real arm. Name your own files with the launch arguments `profile`, `dynamics`, `params` and `gripper_map`. The interface argument is `interface` and defaults to `can0`.
+4. If the launch stops with a message that names a missing file, stop. The shipped files are not installed. The dynamics file and the params file ship as a pair from the same identification. Never mix files from different identifications.
 5. Enabling the motors holds the measured pose. The arm does not move yet.
 6. In RViz, open the MotionPlanning panel. Set the velocity and acceleration scaling to 0.1. Plan and execute the named pose `home`.
 7. Compare the real arm with RViz. If they differ, stop. Support the arm and release it. A bad zero or a wrong joint map causes this.
 8. Only after the arm matches RViz, try other moves. The default scaling is 0.2.
-9. To use nominal caps, launch with your own nominal profile file.
+9. To use nominal caps, launch with the nominal profile. The file ships with the others after the MS5 sessions.
 
-        ros2 launch maker_arm_bringup real.launch.py profile:=/path/to/real_profile_nominal.json
+        ros2 launch maker_arm_bringup real.launch.py \
+            profile:=$(ros2 pkg prefix maker_arm_description)/share/maker_arm_description/config/daemon/real_profile_nominal.json
 
 10. At the end of the session, support the arm. Then release it.
 
@@ -125,12 +128,12 @@ Servo halts near the `ready` pose because of a singularity. Before you teleopera
 ## Safety rules
 
 1. Support the arm before the first launch and before every release.
-2. Run `maker-arm-cli doctor` before the first launch.
+2. Run `maker-arm-cli --can can0 doctor` before the first launch.
 3. Start at caps 0.5. Move to `home` at scaling 0.1 and compare the arm with RViz before any other motion.
 4. Do not release the arm while it is unsupported. Release only through `ros2 run maker_arm_bringup release`.
 5. Do not kill the daemon and do not cut power or CAN while the motors are on. The arm drops.
 6. Keep a person at the e-stop on the first real runs.
-7. Do not run the stack with files from another arm. The daemon refuses to enable if a joint is outside its limits. This catches some bad zeros, not all.
+7. Do not run the stack with files from another arm or with hand-made files. Never mix the dynamics file and the params file of different identifications. The daemon refuses to enable if a joint is outside its limits. This catches some bad zeros, not all.
 8. If the plugin refuses a running daemon, support the arm and run the release step. Then launch again.
 
 What the stack does for you:
