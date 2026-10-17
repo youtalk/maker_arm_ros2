@@ -5,18 +5,19 @@ import signal
 import subprocess
 import time
 
-from v1 import goals, max_dq, status, wait_for_controllers
+from v1 import DAEMON_LOG, goals, max_dq, print_tail, status, wait_for_controllers
 
 TOL = 1e-3  # rad, and m for the gripper
 
 
 def launch(log):
     # A process group of its own, so a SIGINT reaches every node as a Ctrl-C does. The daemon
-    # is not in it: the plugin starts the daemon in a new session.
+    # is not in it: the plugin starts the daemon in a new session. Unbuffered, so the log is
+    # whole when a failed check prints it and the SIGKILL comes before launch flushes.
     return subprocess.Popen(["ros2", "launch", "maker_arm_bringup", "simarm.launch.py",
                              "persist:=true"],
                             start_new_session=True, stdout=open(log, "w"),
-                            stderr=subprocess.STDOUT)
+                            stderr=subprocess.STDOUT, env={**os.environ, "PYTHONUNBUFFERED": "1"})
 
 
 def ctrl_c(p):
@@ -68,6 +69,10 @@ def test_ctrl_c_leaves_the_daemon_holding_and_a_relaunch_does_not_jump(tmp_path)
 
         r = release()
         assert r.returncode == 0, r.stdout + r.stderr
+    except BaseException:
+        for log in [*sorted(tmp_path.glob("*.log")), DAEMON_LOG]:
+            print_tail(log)
+        raise
     finally:
         for p in procs:
             try:

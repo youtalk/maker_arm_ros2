@@ -12,7 +12,7 @@ from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 sys.path.insert(0, os.path.dirname(__file__))
-from v1 import goals, status, wait_for_controllers  # noqa: E402
+from v1 import DAEMON_LOG, goals, print_tail, status, wait_for_controllers  # noqa: E402
 
 
 @pytest.mark.launch_test
@@ -27,11 +27,17 @@ def generate_test_description():
 
 class TestV1SimArm(unittest.TestCase):
 
+    # launch_testing prints the launch output. The daemon writes to its own log.
     def test_twenty_goals_and_the_gripper_with_no_clamped_tick(self):
-        wait_for_controllers()
-        token, payload = goals(20)
-        s = status()
-        print(f"STATUS {s}", flush=True)
-        self.assertEqual(token, "GOALS_OK", payload)
-        self.assertEqual((payload["goals"], payload["ok"], payload["gripper"]), (20, 20, True))
-        self.assertEqual(s["clamped"], 0, s)
+        try:
+            wait_for_controllers()
+            token, payload = goals(20)
+            s = status()
+            print(f"STATUS {s}", flush=True)
+            self.assertEqual(token, "GOALS_OK", payload)
+            self.assertEqual((payload["goals"], payload["ok"], payload["gripper"]),
+                             (20, 20, True))
+            self.assertEqual(s["clamped"], 0, s)
+        except BaseException:
+            print_tail(DAEMON_LOG)
+            raise
