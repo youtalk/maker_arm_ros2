@@ -5,6 +5,8 @@
 move_group_name: arm
 incoming_command_timeout: 0.5
 command_in_type: speed_units
+# The Butterworth filter scaled the commanded speed by 0.571: V2 measured 28.6 of 50 mm/s.
+use_smoothing: false
 check_collisions: true
 command_out_type: trajectory_msgs/JointTrajectory
 command_out_topic: /arm_controller/joint_trajectory

@@ -77,7 +77,9 @@ def generate_launch_description():
     rviz_cfg = os.path.join(share("maker_arm_bringup"), "rviz", "maker_arm.rviz")
 
     nodes = [
-        Node(package="robot_state_publisher", executable="robot_state_publisher", parameters=[description]),
+        # 100 Hz /tf, not the default 20 Hz: the Servo probe reads the tip's stop from /tf.
+        Node(package="robot_state_publisher", executable="robot_state_publisher",
+             parameters=[description, {"publish_frequency": 100.0}]),
         Node(package="controller_manager", executable="ros2_control_node",
              parameters=[description, controllers_yaml], output="screen"),
         *[Node(package="controller_manager", executable="spawner",

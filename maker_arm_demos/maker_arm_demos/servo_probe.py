@@ -36,7 +36,7 @@ from rclpy.executors import SingleThreadedExecutor
 from rclpy.time import Time
 from tf2_ros import Buffer, TransformListener
 
-from maker_arm_demos.random_goals import move, moveit_params
+from maker_arm_demos.random_goals import current_state, move, moveit_params
 
 HZ = 50
 SPEED = 0.05  # m/s along +x of mount_link
@@ -165,7 +165,7 @@ def main():
         robot = MoveItPy(node_name='servo_probe_moveit', config_dict=moveit_params(),
                          provide_planning_service=False)
         arm = robot.get_planning_component('arm')
-        start = copy.copy(arm.get_start_state())
+        start = copy.copy(current_state(arm))
         start.set_joint_group_positions('arm', np.array(START))
         start.update()
         if not move(robot, arm, robot_state=start):

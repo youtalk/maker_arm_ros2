@@ -22,6 +22,9 @@ arm_controller:
     state_interfaces:
       - position
       - velocity
+    # Servo streams trajectories whose last point still moves. Without this, the controller
+    # rejects every one of them (V2).
+    allow_nonzero_velocity_at_trajectory_end: true
 
 gripper_controller:
   ros__parameters:
