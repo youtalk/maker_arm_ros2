@@ -18,7 +18,8 @@ FILES = {
 
 
 def launch_setup(context):
-    args = {k: context.launch_configurations[k] for k in [*FILES, "interface", "persist", "rviz"]}
+    names = [*FILES, "residual", "interface", "rt", "persist", "rviz"]
+    args = {k: context.launch_configurations[k] for k in names}
     missing = [f"{v} ({FILES[k][1]})" for k, v in args.items()
                if k in FILES and not os.path.isfile(v)]
     if missing:
@@ -31,7 +32,9 @@ def launch_setup(context):
 
 
 def generate_launch_description():
-    defaults = {"interface": "can0", "persist": "false", "rviz": "false"}
+    # No residual until MA3 ships one. The plugin names a residual file it cannot read.
+    defaults = {"interface": "can0", "residual": "", "rt": "false", "persist": "false",
+                "rviz": "false"}
     defaults.update({k: os.path.join(DAEMON, v[0]) for k, v in FILES.items()})
     return LaunchDescription([DeclareLaunchArgument(k, default_value=v) for k, v in defaults.items()]
                              + [OpaqueFunction(function=launch_setup)])

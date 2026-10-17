@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 from launch import LaunchContext
+from launch.actions import DeclareLaunchArgument
 from launch_ros.actions import Node
 
 LAUNCH = Path(__file__).resolve().parents[1] / "launch"
@@ -39,7 +40,7 @@ def test_real_launch_names_the_session_for_a_missing_file():
     real = load("real")
     ctx = LaunchContext()
     ctx.launch_configurations.update(
-        {"interface": "can0", "persist": "false", "rviz": "false",
+        {"interface": "can0", "residual": "", "rt": "false", "persist": "false", "rviz": "false",
          **{k: "/nonexistent/" + v[0] for k, v in real.FILES.items()}})
     with pytest.raises(RuntimeError) as e:
         real.launch_setup(ctx)
@@ -48,3 +49,20 @@ def test_real_launch_names_the_session_for_a_missing_file():
         assert session in msg
     for f in ("real_profile_caps050.json", "gripper_map.txt", "dynamics_ident.json", "params_shipped.json"):
         assert f in msg
+
+
+def test_real_launch_passes_residual_and_rt_to_the_stack(tmp_path):
+    real = load("real")
+    declared = [e.name for e in real.generate_launch_description().entities
+                if isinstance(e, DeclareLaunchArgument)]
+    assert {"residual", "rt"} <= set(declared)
+    ctx = LaunchContext()
+    ctx.launch_configurations.update(
+        {"interface": "can0", "residual": "/r.json", "rt": "true", "persist": "false",
+         "rviz": "false"})
+    for k, v in real.FILES.items():
+        (tmp_path / v[0]).write_text("-0.03,0.01")
+        ctx.launch_configurations[k] = str(tmp_path / v[0])
+    (stack,) = real.launch_setup(ctx)
+    args = dict(stack.launch_arguments)
+    assert args["residual"] == "/r.json" and args["rt"] == "true"
