@@ -3,10 +3,11 @@ from itertools import islice, repeat
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 from ament_index_python.packages import get_package_share_directory
 
 from maker_arm_demos import random_goals
-from maker_arm_demos.random_goals import candidates, grip, load_limits
+from maker_arm_demos.random_goals import candidates, current_state, grip, load_limits
 
 LIMITS = load_limits(os.path.join(
     get_package_share_directory('maker_arm_moveit_config'), 'config', 'joint_limits.yaml'))
@@ -60,3 +61,23 @@ def test_a_gripper_goal_counts_when_the_jaw_arrives():
 def test_a_gripper_goal_fails_when_the_jaw_never_arrives(monkeypatch):
     monkeypatch.setattr(random_goals, 'JAW_WAIT', 0.2)
     assert not grip(ROBOT, FakeHand(repeat(0.03)), 'open')
+
+
+class LateArm:
+    """An arm PlanningComponent with no current state for its first `late` reads."""
+
+    def __init__(self, late):
+        self.reads = iter([None] * late + ['state'])
+
+    def get_start_state(self):
+        return next(self.reads, None)
+
+
+def test_the_current_state_waits_for_moveit():
+    assert current_state(LateArm(late=3)) == 'state'
+
+
+def test_no_current_state_fails_with_a_reason(monkeypatch):
+    monkeypatch.setattr(random_goals, 'STATE_WAIT', 0.2)
+    with pytest.raises(TimeoutError, match='no current robot state'):
+        current_state(LateArm(late=100))

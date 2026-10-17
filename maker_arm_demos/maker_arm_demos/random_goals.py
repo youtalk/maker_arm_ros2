@@ -28,6 +28,7 @@ ARM = [f'link_00{i}_joint' for i in range(2, 8)]
 DRAWS_PER_GOAL = 100
 JAW_TOL = 0.002  # m, the gripper controller's goal_tolerance
 JAW_WAIT = 3.0  # s
+STATE_WAIT = 10.0  # s for MoveIt's first complete joint state
 
 
 def load_limits(path):
@@ -77,6 +78,16 @@ def moveit_params():
     }
 
 
+def current_state(component):
+    """Return the measured state. Right after start, MoveIt can have none yet, so wait."""
+    deadline = time.monotonic() + STATE_WAIT
+    while (state := component.get_start_state()) is None:
+        if time.monotonic() > deadline:
+            raise TimeoutError(f'no current robot state from MoveIt in {STATE_WAIT} s')
+        time.sleep(0.1)
+    return state
+
+
 def move(robot, component, **goal):
     component.set_start_state_to_current_state()
     component.set_goal_state(**goal)
@@ -104,7 +115,7 @@ def run(robot, args):
     limits = load_limits(_path('joint_limits.yaml'))
     arm = robot.get_planning_component('arm')
     # The measured state: the gripper stays where the planner will see it.
-    measured = arm.get_start_state()
+    measured = current_state(arm)
 
     goals = []
     with robot.get_planning_scene_monitor().read_only() as scene:
