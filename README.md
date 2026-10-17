@@ -1,3 +1,155 @@
 # maker_arm_ros2
 
-ROS 2 Jazzy packages for the MakerMods Maker Arm: the robot description, a ros2_control plugin over a maker-arm-rs daemon, the MoveIt configuration, launch files and a MuJoCo plant. More documentation follows.
+ROS 2 Jazzy packages for the MakerMods Maker Arm. They hold the robot description, a ros2_control plugin, MoveIt and Servo, launch files, a MuJoCo plant and two demos.
+
+The plugin talks to a daemon from maker-arm-rs (`maker-arm-cli serve`). The daemon owns the motors. If ROS stops, the daemon keeps holding the arm.
+
+Status: the stack is verified in simulation. It is not yet verified on a real arm. Treat the real-arm section as a first trial and read the safety rules below before you start.
+
+## Install
+
+These steps are for Ubuntu 24.04 with ROS 2 Jazzy.
+
+1. Install the ROS packages.
+
+        sudo apt install ros-jazzy-moveit ros-jazzy-moveit-py ros-jazzy-moveit-servo \
+            ros-jazzy-ros2-control ros-jazzy-ros2-controllers can-utils
+
+2. Install the daemon. Ubuntu's default `cargo` is too old, so use the versioned packages.
+
+        sudo apt install rustc-1.85 cargo-1.85 git
+        git clone https://github.com/youtalk/maker-arm-rs
+        git -C maker-arm-rs checkout be17836308af8602fee5d319eb1565f30445636d
+        PATH=/usr/lib/rust-1.85/bin:$PATH cargo install --locked --path maker-arm-rs/crates/maker-arm-cli
+
+3. Add `~/.cargo/bin` to your `PATH`. The plugin starts `maker-arm-cli` from there.
+
+4. Clone this repository into a workspace.
+
+        mkdir -p ~/maker_arm_ws/src
+        git clone https://github.com/youtalk/maker_arm_ros2 ~/maker_arm_ws/src/maker_arm_ros2
+        cd ~/maker_arm_ws
+
+5. Make a venv for MuJoCo. `mujoco` is not a rosdep key, so pip installs it.
+
+        python3 -m venv --system-site-packages .venv
+        .venv/bin/pip install mujoco==3.13.0
+
+6. Build with the venv's Python.
+
+        source /opt/ros/jazzy/setup.bash
+        rosdep install --from-paths src --ignore-src -y
+        .venv/bin/python -m colcon build
+        source install/setup.bash
+
+## Simulation
+
+Start here. No arm and no CAN hardware are needed.
+
+### SimArm
+
+SimArm is the daemon's built-in simulated arm. Run it first.
+
+    ros2 launch maker_arm_bringup simarm.launch.py rviz:=true
+
+### MuJoCo on vcan0
+
+The MuJoCo plant answers on a virtual CAN bus as the arm's seven motors. The daemon and the stack run as on the real arm.
+
+1. Bring up `vcan0`. This needs sudo once per boot.
+
+        sudo bash src/maker_arm_ros2/maker_arm_mujoco/scripts/vcan_up.sh
+
+2. Launch the plant and the stack. The stack starts after the plant prints `PLANT_READY`.
+
+        ros2 launch maker_arm_bringup sim.launch.py rviz:=true
+
+The plant publishes the wrist camera on `/wrist_camera/image_raw/compressed`. Launch arguments are `scene` (a scene file) and `seed` (the scene perturbation).
+
+### Demos
+
+Run the pick and place demo with the simulation running. It writes a record of the moves to `--out`.
+
+    ros2 run maker_arm_demos pick_place --seed 1 --out /tmp/pick_place.json
+
+To replay a record at half speed, run the next command. The replay refuses to start if the arm is not at the record's start pose.
+
+    ros2 run maker_arm_demos replay /tmp/pick_place.json
+
+If you want the replay to move the arm to the start pose first, add `--approach`. It plans at scaling 0.1 and waits for you to type `yes`.
+
+## The real arm
+
+The real arm can fall and break if it loses power or CAN. Software cannot prevent this. Follow the steps in order.
+
+1. Support the arm with your hand or a stand. Do this before the first launch and before every release.
+2. Run the daemon's check. If it reports a problem, stop here.
+
+        maker-arm-cli doctor
+
+3. Launch the stack. The default profile limits the caps to 0.5 of the nominal profile.
+
+        ros2 launch maker_arm_bringup real.launch.py rviz:=true
+
+4. If the launch stops with a message that names a missing file, the file does not exist yet. The default profile, dynamics, parameter and gripper map files come from the MS5 sessions on the real arm. Name your own files with the launch arguments `profile`, `dynamics`, `params` and `gripper_map`. The interface argument is `interface` and defaults to `can0`.
+5. Enabling the motors holds the measured pose. The arm does not move yet.
+6. In RViz, open the MotionPlanning panel. Set the velocity and acceleration scaling to 0.1. Plan and execute the named pose `home`.
+7. Compare the real arm with RViz. If they differ, stop. Support the arm and release it. A bad zero or a wrong joint map causes this.
+8. Only after the arm matches RViz, try other moves. The default scaling is 0.2.
+9. To use nominal caps, launch with your own nominal profile file.
+
+        ros2 launch maker_arm_bringup real.launch.py profile:=/path/to/real_profile_nominal.json
+
+10. At the end of the session, support the arm. Then release it.
+
+        ros2 run maker_arm_bringup release
+
+    Only a typed `RELEASE` disables the motors.
+
+If you stop the launch with Ctrl-C, the daemon keeps holding the arm. Run the release step when you want the motors off.
+
+## Conduit
+
+Use these values to connect Conduit.
+
+| Item | Value |
+| --- | --- |
+| Base frame | `mount_link` |
+| Gripper action | `/gripper_controller/gripper_cmd` |
+| Gripper open | 0.050636 m per jaw |
+| Gripper closed | 0.0017765 m per jaw |
+| Wrist camera (simulation only) | `/wrist_camera/image_raw/compressed` |
+
+Servo halts near the `ready` pose because of a singularity. Before you teleoperate, move away from `ready`. Use the `home` pose or a MoveIt goal.
+
+## Safety rules
+
+1. Support the arm before the first launch and before every release.
+2. Run `maker-arm-cli doctor` before the first launch.
+3. Start at caps 0.5. Move to `home` at scaling 0.1 and compare the arm with RViz before any other motion.
+4. Do not release the arm while it is unsupported. Release only through `ros2 run maker_arm_bringup release`.
+5. Do not kill the daemon and do not cut power or CAN while the motors are on. The arm drops.
+6. Keep a person at the e-stop on the first real runs.
+7. Do not run the stack with files from another arm. The daemon refuses to enable if a joint is outside its limits. This catches some bad zeros, not all.
+8. If the plugin refuses a running daemon, support the arm and run the release step. Then launch again.
+
+What the stack does for you:
+
+- The daemon holds if ROS crashes or stops sending commands.
+- The daemon refuses a command jump and clamps every command to the profile.
+- Enable holds the measured pose.
+- MoveIt keeps a margin inside the joint limits. The collision matrix and a desk object protect the arm and the desk.
+- The gripper squeeze torque is limited.
+
+## Packages
+
+- `maker_arm_description`: URDF, meshes and the daemon model files.
+- `maker_arm_hardware`: the ros2_control plugin.
+- `maker_arm_moveit_config`: MoveIt and Servo configuration.
+- `maker_arm_bringup`: launch files, controllers, RViz and the release command.
+- `maker_arm_mujoco`: the MuJoCo plant.
+- `maker_arm_demos`: pick and place, replay and test tools.
+
+## License
+
+Apache-2.0.
