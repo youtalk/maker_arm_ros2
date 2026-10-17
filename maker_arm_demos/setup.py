@@ -18,7 +18,9 @@ setup(
     license='Apache-2.0',
     extras_require={'test': ['pytest']},
     entry_points={'console_scripts': [
+        'pick_place = maker_arm_demos.pick_place:main',
         'random_goals = maker_arm_demos.random_goals:main',
+        'replay = maker_arm_demos.replay:main',
         'servo_probe = maker_arm_demos.servo_probe:main',
     ]},
 )

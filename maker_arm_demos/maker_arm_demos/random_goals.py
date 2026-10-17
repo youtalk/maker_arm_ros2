@@ -58,18 +58,20 @@ def _config(name):
 
 
 def moveit_params():
-    """Build the MoveIt parameters as stack.launch.py does, for one OMPL pipeline."""
+    """Build the MoveIt parameters as stack.launch.py does: OMPL, and Pilz for LIN moves."""
     import xacro
 
     planning = _config('joint_limits.yaml')
+    planning.update(_config('pilz_cartesian_limits.yaml'))
     urdf = os.path.join(share('maker_arm_description'), 'urdf', 'maker_arm.urdf.xacro')
     return {
         'robot_description': xacro.process_file(urdf).toxml(),
         'robot_description_semantic': _config('maker_arm.srdf'),
         'robot_description_kinematics': _config('kinematics.yaml'),
         'robot_description_planning': planning,
-        'planning_pipelines': {'pipeline_names': ['ompl']},
+        'planning_pipelines': {'pipeline_names': ['ompl', 'pilz_industrial_motion_planner']},
         'ompl': _config('ompl_planning.yaml'),
+        'pilz_industrial_motion_planner': _config('pilz_industrial_motion_planner_planning.yaml'),
         **_config('moveit_controllers.yaml'),
         'plan_request_params': {
             'planning_pipeline': 'ompl',
@@ -91,7 +93,7 @@ def current_state(component):
     return state
 
 
-def try_move(robot, component, **goal):
+def try_move(robot, component, params=None, **goal):
     """Plan, then execute. Return None on success, else (stage, MoveIt code or status).
 
     A failed plan is retried with a fresh plan() up to PLAN_TRIES. A failed execution is not:
@@ -100,7 +102,7 @@ def try_move(robot, component, **goal):
     component.set_start_state_to_current_state()
     component.set_goal_state(**goal)
     for _ in range(PLAN_TRIES):
-        plan = component.plan()
+        plan = component.plan(single_plan_parameters=params) if params else component.plan()
         if plan:
             break
     else:
@@ -112,8 +114,9 @@ def try_move(robot, component, **goal):
     return 'execute', str(getattr(result, 'status', result))
 
 
-def move(robot, component, **goal):
-    return try_move(robot, component, **goal) is None
+def move(robot, component, params=None, **goal):
+    """Plan from the measured state to goal, with params (PlanRequestParameters) if given."""
+    return try_move(robot, component, params, **goal) is None
 
 
 def grip(robot, hand, name):

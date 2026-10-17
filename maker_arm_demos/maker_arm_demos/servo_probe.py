@@ -58,6 +58,16 @@ START = [-1.32, -0.84, 0.58, 0.39, 0.72, 0.04]
 WAIT = 10.0  # s for each server, topic, transform and goal
 
 
+def start_node(name, **init):
+    """Start rclpy with init's options and spin a new node in a daemon thread. Return the node."""
+    rclpy.init(**init)
+    node = rclpy.create_node(name)
+    executor = SingleThreadedExecutor()
+    executor.add_node(node)
+    threading.Thread(target=executor.spin, daemon=True).start()
+    return node
+
+
 def judge(track, t_release):
     """Score a tip track [(t in s, xyz in mount_link)] by Conduit 3.0 spec G2.
 
@@ -157,13 +167,9 @@ def main():
         ap.parse_args()
         from moveit.planning import MoveItPy
 
-        rclpy.init()
-        node = rclpy.create_node('servo_probe')
+        node = start_node('servo_probe')
         tf = Buffer()
         TransformListener(tf, node)
-        executor = SingleThreadedExecutor()
-        executor.add_node(node)
-        threading.Thread(target=executor.spin, daemon=True).start()
         # It lives until os._exit: deleting a MoveItPy segfaults (MoveIt 2.12).
         robot = MoveItPy(node_name='servo_probe_moveit', config_dict=moveit_params(),
                          provide_planning_service=False)
