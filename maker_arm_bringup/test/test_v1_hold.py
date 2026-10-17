@@ -25,8 +25,8 @@ def ctrl_c(p):
 
 
 def settled_q(timeout=10.0):
-    # MoveIt reports the gripper done within the controller's 2 mm goal tolerance, so the jaw
-    # can still be closing when random_goals exits.
+    # random_goals waits only until the jaw is within 2 mm of its goal, so the jaw can still
+    # be closing when it exits.
     q = status()["q"]
     for _ in range(int(timeout / 0.5)):
         time.sleep(0.5)

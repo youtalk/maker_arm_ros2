@@ -3,9 +3,9 @@
     ros2 run maker_arm_demos random_goals --count 20 --seed 0 [--sag]
 
 The goals are drawn uniformly inside joint_limits.yaml, and each one the planning scene
-reports valid is kept. Then the gripper moves to `open` and `closed`. With --sag, the arm
-moves to `ready`, waits 2 s and reports the distance in mm between the commanded and the
-measured grasp_center.
+reports valid is kept. Then the gripper moves to `open` and `closed`. Each counts only when
+the measured jaw gets within 2 mm of it in 3 s. With --sag, the arm moves to `ready`, waits
+2 s and reports the distance in mm between the commanded and the measured grasp_center.
 
 It prints exactly one token line on every exit path, then exits through os._exit:
 GOALS_OK {"goals": 20, "ok": 20, "gripper": true, "sag_mm": null} or GOALS_FAIL {...}.
@@ -26,6 +26,8 @@ from ament_index_python.packages import get_package_share_directory as share
 ARM = [f'link_00{i}_joint' for i in range(2, 8)]
 # ponytail: rejection sampling stops after this many draws per goal, then the run fails.
 DRAWS_PER_GOAL = 100
+JAW_TOL = 0.002  # m, the gripper controller's goal_tolerance
+JAW_WAIT = 3.0  # s
 
 
 def load_limits(path):
@@ -82,6 +84,22 @@ def move(robot, component, **goal):
     return bool(plan) and bool(robot.execute(plan.trajectory, controllers=[]))
 
 
+def grip(robot, hand, name):
+    """Move the gripper to a named state. True only when the measured jaw arrives.
+
+    The controller can report success on a stall before the jaw gets there.
+    """
+    if not move(robot, hand, configuration_name=name):
+        return False
+    goal = hand.get_named_target_state_values(name)['gripper_left_joint']
+    deadline = time.monotonic() + JAW_WAIT
+    while time.monotonic() < deadline:
+        if abs(hand.get_start_state().joint_positions['gripper_left_joint'] - goal) < JAW_TOL:
+            return True
+        time.sleep(0.05)
+    return False
+
+
 def run(robot, args):
     limits = load_limits(_path('joint_limits.yaml'))
     arm = robot.get_planning_component('arm')
@@ -101,8 +119,8 @@ def run(robot, args):
 
     ok = sum(move(robot, arm, robot_state=g) for g in goals)
     hand = robot.get_planning_component('gripper')
-    opened = move(robot, hand, configuration_name='open')
-    closed = move(robot, hand, configuration_name='closed')
+    opened = grip(robot, hand, 'open')
+    closed = grip(robot, hand, 'closed')
     gripper = opened and closed
 
     sag = None

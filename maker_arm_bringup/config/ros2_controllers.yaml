@@ -28,3 +28,5 @@ gripper_controller:
     joint: gripper_left_joint
     goal_tolerance: 0.002
     allow_stalling: true
+    # SimArm reports no jaw velocity, so a goal ends as a stall success after stall_timeout.
+    stall_timeout: 2.0  # INITIAL: V2 measures the jaw speed on the MuJoCo plant
