@@ -23,7 +23,9 @@ arm_controller:
       - position
       - velocity
     # Servo streams trajectories whose last point still moves. Without this, the controller
-    # rejects every one of them (V2).
+    # rejects every one of them (V2). It is safe here: the only command interface is position,
+    # so no velocity reaches the arm, and the daemon refuses any arm target more than 0.05 rad
+    # from the last one and holds. Check this on the real arm in V3.
     allow_nonzero_velocity_at_trajectory_end: true
 
 gripper_controller:
