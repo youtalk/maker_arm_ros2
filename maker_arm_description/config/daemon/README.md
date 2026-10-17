@@ -1,9 +1,10 @@
 # Daemon model files
 
-Both files are exports of maker-arm-lab at commit `c9b9a3c`, copied without change.
-They were made with this command, run in that checkout:
+Both files come from `maker-arm-cli export` of maker-arm-rs at commit `fdda16e5bf05ee3a658bbc9de13dce84640dff33`. Run this command in the root of this repository:
 
-    PYTHONPATH=$PWD/source .venv/bin/python scripts/export_daemon_files.py --sim --out_dir <this directory>
+    maker-arm-cli export --sim --urdf maker_arm_description/urdf/maker_arm_sdk.urdf --out_dir maker_arm_description/config/daemon
 
-- `sim_profile.json` is the lab's `sim_profile()`.
-- `dynamics_urdf.json` holds the arguments of the lab's `Dynamics` (the arm's own URDF). Its `armature` is `null` on purpose: the pinned maker-arm-rs takes no armature argument yet.
+- `sim_profile.json` is the profile of the daemon's built-in simulated arm.
+- `dynamics_urdf.json` holds the arm's own URDF model. Its `armature` is `null` on purpose. `provenance` holds the SHA-256 of the URDF.
+
+To make a profile for a real arm, run `maker-arm-cli export --calibration CAL.json --caps 0.5 --out <path>`. The README in the repository root explains the steps.

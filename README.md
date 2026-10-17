@@ -4,7 +4,7 @@ ROS 2 Jazzy packages for the MakerMods Maker Arm. They hold the robot descriptio
 
 The plugin talks to a daemon from maker-arm-rs (`maker-arm-cli serve`). The daemon owns the motors. If ROS stops, the daemon keeps holding the arm.
 
-Status: the stack is verified in simulation. It is not yet verified on a real arm. The real-arm files ship after the MS5 sessions, so the real-arm path is not ready. Do not run `real.launch.py` with hand-made profile, dynamics or params files.
+Status: the stack is verified in simulation. It is not yet verified on a real arm. The real-arm path needs a profile that you make from a calibration of your own arm. Read the real-arm section first.
 
 ## Install
 
@@ -22,7 +22,7 @@ These steps are for Ubuntu 24.04 with ROS 2 Jazzy.
     ```sh
     sudo apt install rustc-1.85 cargo-1.85 git
     git clone https://github.com/youtalk/maker-arm-rs
-    git -C maker-arm-rs checkout 31b3584b195bf225d71e5bffdec04c073a640332
+    git -C maker-arm-rs checkout fdda16e5bf05ee3a658bbc9de13dce84640dff33
     PATH=/usr/lib/rust-1.85/bin:$PATH cargo install --locked --path maker-arm-rs/crates/maker-arm-cli
     ```
 
@@ -104,7 +104,9 @@ If you want the replay to move the arm to the start pose first, add `--approach`
 
 ## The real arm
 
-The real-arm path is not ready. The default files of `real.launch.py` ship after the MS5 sessions. Until then, the launch stops and names the missing file. Do not run it with hand-made profile, dynamics or params files. The steps below are for later, after the shipped files exist.
+You make the profile of your arm with `maker-arm-cli export`. The calibration measurement procedure is not published yet. A guessed calibration can drive a joint into its stop, so do not guess.
+
+The defaults are the shipped `dynamics_urdf.json` and no params file. Later, the defaults become one identified model and its session 5 params. They always change as a pair. Never mix the dynamics file and the params file of different identifications.
 
 If the real arm loses power or CAN, it can fall and break. Software cannot prevent this. Follow the steps in order.
 
@@ -131,23 +133,29 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
     maker-arm-cli --can can0 doctor
     ```
 
-5. Launch the stack. By default it starts at caps 0.5 of the nominal gains and torque caps.
+5. Make the profile of your arm. The calibration file is JSON with two keys. `direction` has 7 values, each -1.0 or 1.0. `offset` has 7 values, each within pi. The command writes the profile with caps 0.5 of the nominal gains and torque caps. For a capped profile, the daemon also sets the error clamp.
 
     ```sh
-    ros2 launch maker_arm_bringup real.launch.py rviz:=true
+    maker-arm-cli export --calibration CAL.json --caps 0.5 --out ~/maker_arm/real_profile.json
     ```
 
-6. If the launch stops with a message that names a missing file, stop. The shipped files are not installed. The dynamics file and the params file ship as a pair from the same identification. Never mix files from different identifications.
+6. Launch the stack with that profile. Without `profile:=`, the launch stops and prints the export command.
+
+    ```sh
+    ros2 launch maker_arm_bringup real.launch.py profile:=$HOME/maker_arm/real_profile.json rviz:=true
+    ```
+
+   If the launch stops with a message that names a file that does not exist, stop. Fix the path. Never mix a dynamics file and a params file of different identifications.
 7. If the launch says that no daemon answered, read the log that the message names. To find the process that holds the CAN bus, run `ss -xlp | grep maker-arm-bus-can0`. A daemon can hold the arm with no socket. Support the arm before you stop that process, because the arm then drops.
 8. Enabling the motors holds the measured pose. The daemon also enables a joint that rests up to 0.35 rad outside its soft limits. It then pulls that joint back inside the limits, so that joint can move by up to 0.35 rad. Keep the arm supported until the launch finishes.
 9. In RViz, open the MotionPlanning panel. Set the velocity and acceleration scaling to 0.1. Plan and execute the named pose `home`.
 10. Compare the real arm with RViz. If they differ, stop. Support the arm and release it. A bad zero or a wrong joint map causes this.
 11. Only after the arm matches RViz, try other moves. The default scaling is 0.2.
-12. To use nominal caps, launch with the nominal profile. The file ships with the others after the MS5 sessions.
+12. Use nominal caps only after the arm matches RViz and finishes the moves of steps 9 and 11 at caps 0.5. Write the nominal profile to a second file, so the caps 0.5 profile stays.
 
     ```sh
-    ros2 launch maker_arm_bringup real.launch.py \
-        profile:=$(ros2 pkg prefix maker_arm_description)/share/maker_arm_description/config/daemon/real_profile_nominal.json
+    maker-arm-cli export --calibration CAL.json --caps 1.0 --out ~/maker_arm/real_profile_nominal.json
+    ros2 launch maker_arm_bringup real.launch.py profile:=$HOME/maker_arm/real_profile_nominal.json rviz:=true
     ```
 
 13. At the end of the session, support the arm. Then release it.
