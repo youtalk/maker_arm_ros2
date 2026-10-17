@@ -1,15 +1,18 @@
 """Replay an S3 record on the arm at half speed, from a checked start pose (demo S3).
 
-    ros2 run maker_arm_demos replay REC.json [--approach]
+    ros2 run maker_arm_demos replay REC.json [--approach] [--raised M]
 
 It refuses a record with a point outside joint_limits.yaml: a position past a limit, or a joint
-faster than its max_velocity. It refuses to start unless every arm joint lies within
+faster than its max_velocity. By FK on the planning model, it finds the fingertips' lowest
+height over the modeled desk, and it refuses a record that comes closer than
+REPLAY_MIN_CLEARANCE_M. With --raised M (at least RAISED_MIN_M), the arm stands M above the
+modeled desk, and the check adds M. It refuses to start unless every arm joint lies within
 START_TOL_RAD of the record's start. With --approach, it plans a MoveIt move to the start at
 scaling 0.1 instead, and moves only after the operator types yes. Then it prints the replay's
-duration and joint range and asks for yes again. It sends the arm points as one
-FollowJointTrajectory goal, with every time divided by REPLAY_SPEED, and each gripper goal at
-its scaled time. On Ctrl-C, SIGTERM, SIGHUP or any error while a goal runs, it cancels the arm
-goal, and the controller holds the arm where it is.
+duration, joint ranges and fingertip clearance and asks for yes again. It sends the arm points
+as one FollowJointTrajectory goal, with every time divided by REPLAY_SPEED, and each gripper
+goal at its scaled time. On Ctrl-C, SIGTERM, SIGHUP or any error while a goal runs, it cancels
+the arm goal, and the controller holds the arm where it is.
 
 It prints exactly one token line on every exit path, then exits through os._exit:
 REPLAY_OK {"duration_s": 120.4, "points": 812, "grips": 3} or REPLAY_FAIL {"reason": "..."}.
@@ -22,6 +25,7 @@ import json
 import math
 import os
 import signal
+import tempfile
 import time
 import traceback
 
@@ -35,13 +39,17 @@ from rclpy.signals import SignalHandlerOptions
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectoryPoint
 
-from maker_arm_demos.random_goals import _config, ARM, current_state, moveit_params
+from maker_arm_demos.pick_place import TIP_M
+from maker_arm_demos.random_goals import _config, _path, ARM, current_state, moveit_params
 from maker_arm_demos.record import Record
 from maker_arm_demos.servo_probe import result, start_node, wait_for
 
 START_TOL_RAD = 0.02  # INITIAL: spec section 6.6
 REPLAY_SPEED = 0.5  # INITIAL: spec section 6.6
 APPROACH_SCALING = 0.1  # MoveIt velocity and acceleration scaling of the move to the start
+REPLAY_MIN_CLEARANCE_M = 0.02  # INITIAL: V3. Fingertips over the desk, anywhere in the record
+RAISED_MIN_M = 0.05  # a --raised arm stands at least this far above the modeled desk
+DESK_Z = 0.0  # the modeled desk's top in mount_link: the mount plane (the description)
 LEAD_S = 1.0  # a goal reaches its first point this long after it starts, from the measured pose
 RESULT_WAIT_S = 10.0  # past the trajectory's end, for the controller's result
 CANCEL_WAIT_S = 3.0
@@ -93,6 +101,52 @@ def check_start(measured, record):
     if any(not d <= START_TOL_RAD for d in off.values()):  # false for NaN too
         raise ValueError(f'{bad[0]} is {off[bad[0]]:.3f} rad from the record start, over '
                          f'{START_TOL_RAD} rad (--approach moves it there)')
+
+
+def lowest_tip(record):
+    """
+    Return (height, t): the fingertips' lowest height over the modeled desk, and its time.
+
+    FK on the robot model that MoveIt plans with. The fingertips lie TIP_M from grasp_center
+    along its -z axis, where pick_place puts them.
+    """
+    # ponytail: one point on the tool axis. An open finger sits up to 52 mm off it, so a tilted
+    # tool puts that finger up to 52 mm * sin(tilt) lower. Check the finger links if that matters.
+    from moveit.core.robot_model import RobotModel
+    from moveit.core.robot_state import RobotState
+
+    with tempfile.NamedTemporaryFile('w', suffix='.urdf') as urdf:
+        urdf.write(moveit_params()['robot_description'])
+        urdf.flush()
+        model = RobotModel(urdf.name, _path('maker_arm.srdf'))
+    state = RobotState(model)
+    state.set_to_default_values()
+    tip = np.array([0.0, 0.0, -TIP_M, 1.0])
+    heights = []
+    for t, q in record.points:
+        state.set_joint_group_positions('arm', np.array(q))
+        state.update()
+        heights.append((float((state.get_global_link_transform('grasp_center') @ tip)[2]), t))
+    low, t = min(heights)
+    return low - DESK_Z, t
+
+
+def check_clearance(low, t, raised):
+    """
+    Raise ValueError unless the fingertips stay REPLAY_MIN_CLEARANCE_M over the desk.
+
+    low is their lowest height over the modeled desk, at t s into the record. raised (m, or
+    None) says the arm stands that far above the modeled desk. It adds to low, and it must be
+    at least RAISED_MIN_M.
+    """
+    if raised is not None and not raised >= RAISED_MIN_M:  # false for NaN too
+        raise ValueError(f'--raised {raised} m is under {RAISED_MIN_M} m')
+    if not low + (raised or 0.0) >= REPLAY_MIN_CLEARANCE_M:
+        how = (f'with --raised {raised} m, {low + raised:.3f} m' if raised is not None else
+               f'raise the arm at least {RAISED_MIN_M} m above the modeled desk and pass '
+               f'--raised M')
+        raise ValueError(f'the fingertips come {low:.3f} m over the modeled desk at t = '
+                         f'{t:.1f} s of the record, under {REPLAY_MIN_CLEARANCE_M} m ({how})')
 
 
 def confirm(answer):
@@ -218,6 +272,8 @@ def approach(node, record):
 def run(args):
     record = Record.load(args.record)
     check_limits(record, _config('joint_limits.yaml')['joint_limits'])
+    low, low_t = lowest_tip(record)
+    check_clearance(low, low_t, args.raised)
     # No rclpy signal handlers: on Ctrl-C they end the context, and the cancel cannot go out.
     node = start_node('replay', signal_handler_options=SignalHandlerOptions.NO)
     try:
@@ -236,6 +292,9 @@ def run(args):
     if slow.grips:
         jaw = [x for _, x in slow.grips]
         print(f'  {JAW}: {min(jaw):.4f} to {max(jaw):.4f} m')
+    raised = '' if args.raised is None else f', {low + args.raised:.3f} m with --raised'
+    print(f'  fingertips: at least {low:.3f} m over the modeled desk (t = {low_t:.1f} s of the '
+          f'record){raised}')
     ask('Type yes to replay it on the arm:')
     check_start(measured(node), record)  # the arm can have moved while the prompt waited
     follow(node, slow)
@@ -253,6 +312,8 @@ def main():
         ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
         ap.add_argument('record')
         ap.add_argument('--approach', action='store_true')
+        ap.add_argument('--raised', type=float, metavar='M',
+                        help=f'the arm stands M m (>= {RAISED_MIN_M}) above the modeled desk')
         args = ap.parse_args()
         payload = run(args)
         token, code = 'REPLAY_OK', 0

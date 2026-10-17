@@ -5,7 +5,9 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 
 from maker_arm_demos.record import Record
-from maker_arm_demos.replay import check_limits, check_start, confirm, scale
+from maker_arm_demos.replay import (
+    check_clearance, check_limits, check_start, confirm, lowest_tip, scale
+)
 
 ARM = [f'link_00{i}_joint' for i in range(2, 8)]
 READY = [0.0, -1.79, 2.05, -1.3, -0.22, 0.0]
@@ -81,3 +83,32 @@ def test_anything_but_yes_cancels():
     assert confirm('yes')
     for answer in ('y', 'Y', 'YES', 'Yes', 'yes please', ' yes', '', 'no'):
         assert not confirm(answer), answer
+
+
+def test_replay_refuses_fingertips_closer_to_the_desk_than_the_clearance():
+    check_clearance(0.02, 1.0, None)  # at the bar
+    with pytest.raises(ValueError, match=r'0\.003 m over the modeled desk at t = 12\.3 s'):
+        check_clearance(0.003, 12.3, None)
+    with pytest.raises(ValueError, match='--raised M'):  # says how to replay it
+        check_clearance(0.003, 12.3, None)
+    with pytest.raises(ValueError):
+        check_clearance(float('nan'), 0.0, None)
+
+
+def test_a_raised_arm_adds_its_height_and_stands_at_least_5_cm():
+    check_clearance(0.003, 12.3, 0.05)  # 0.053 m over the real desk
+    check_clearance(-0.03, 0.0, 0.05)  # 0.02 m, at the bar
+    with pytest.raises(ValueError, match='0.010 m'):
+        check_clearance(-0.04, 0.0, 0.05)
+    for raised in (0.049, 0.0, -0.1, float('nan')):
+        with pytest.raises(ValueError, match='--raised'):
+            check_clearance(0.5, 0.0, raised)
+
+
+def test_the_lowest_fingertip_comes_from_fk_over_the_whole_record():
+    """FK on the planning model, with no live stack."""
+    low, t = lowest_tip(record(points=[(0.0, READY)]))
+    assert t == 0.0 and low == pytest.approx(0.1333, abs=0.001)  # tips under grasp_center
+    down = [0.0, -2.1, 2.05, -1.3, -0.22, 0.0]  # the shoulder lowers the tool
+    low, t = lowest_tip(record(points=[(0.0, READY), (1.0, down), (2.0, READY)]))
+    assert t == 1.0 and low == pytest.approx(0.0438, abs=0.001)
