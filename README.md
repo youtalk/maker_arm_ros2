@@ -93,8 +93,12 @@ ros2 run maker_arm_demos pick_place --seed 1 --out /tmp/pick_place.json
 To replay a record at half speed, run the next command. If the arm is not at the record's start pose, the replay refuses to start.
 
 ```sh
-ros2 run maker_arm_demos replay /tmp/pick_place.json
+ros2 run maker_arm_demos replay /tmp/pick_place.json --raised 0.05
 ```
+
+The replay also refuses a record whose fingertips come within 2 cm of the modeled desk. A pick and place record grasps closer than that. `--raised M` says that the arm stands M meters above the modeled desk. The replay then adds M to the fingertip height. M must be at least 0.05. In simulation the arm stays on the desk, so `--raised 0.05` only lets the record through. On the real arm, raise the arm at least 5 cm above the modeled desk before a replay. Then pass that height as `--raised`.
+
+Before it asks for `yes`, the replay prints the duration, the joint ranges and the lowest fingertip height.
 
 If you want the replay to move the arm to the start pose first, add `--approach`. It plans at scaling 0.1. It asks you to type `yes` twice, before the approach and before the replay.
 
@@ -180,6 +184,7 @@ Servo halts near the `ready` pose because of a singularity. Before you teleopera
 6. Keep a person at the e-stop on the first real runs.
 7. Do not run the stack with files from another arm or with hand-made files. Never mix the dynamics file and the params file of different identifications. If a joint is more than 0.35 rad outside its limits, the daemon refuses to enable. This catches some bad zeros, not all.
 8. If the plugin refuses a running daemon, support the arm and run the release step. Then launch again.
+9. On the real arm, replay a record only with the arm raised at least 5 cm above the modeled desk. Pass that height as `--raised`.
 
 What the stack does for you:
 
