@@ -23,10 +23,12 @@ namespace maker_arm_hardware
 {
 namespace
 {
-// The maker-arm-rs revision whose daemon this plugin speaks to.
+// The maker-arm-rs revision whose daemon this plugin speaks to. It installs from a clone:
+// Ubuntu's apt cargo-1.85 cannot fetch a git URL (its system libgit2 is too old).
 const char * const kInstall =
-  "cargo install --locked --git https://github.com/youtalk/maker-arm-rs "
-  "--rev be17836308af8602fee5d319eb1565f30445636d maker-arm-cli";
+  "git clone https://github.com/youtalk/maker-arm-rs && "
+  "git -C maker-arm-rs checkout be17836308af8602fee5d319eb1565f30445636d && "
+  "cargo install --locked --path maker-arm-rs/crates/maker-arm-cli";
 // INITIAL: V1 (task 11) streams 100 Hz on SimArm through it, V2 measures the reply latency
 constexpr std::chrono::milliseconds kReplyWait{50};
 // The first reply also waits for the daemon's 10 ms accept tick and a new connection thread.

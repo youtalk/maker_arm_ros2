@@ -29,8 +29,9 @@ using maker_arm_hardware::DaemonLink;
 using maker_arm_hardware::DaemonOptions;
 
 const char kInstall[] =
-  "cargo install --locked --git https://github.com/youtalk/maker-arm-rs --rev "
-  "be17836308af8602fee5d319eb1565f30445636d maker-arm-cli";
+  "git clone https://github.com/youtalk/maker-arm-rs && "
+  "git -C maker-arm-rs checkout be17836308af8602fee5d319eb1565f30445636d && "
+  "cargo install --locked --path maker-arm-rs/crates/maker-arm-cli";
 
 namespace
 {
