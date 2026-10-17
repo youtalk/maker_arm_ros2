@@ -81,3 +81,55 @@ def test_no_current_state_fails_with_a_reason(monkeypatch):
     monkeypatch.setattr(random_goals, 'STATE_WAIT', 0.2)
     with pytest.raises(TimeoutError, match='no current robot state'):
         current_state(LateArm(late=100))
+
+
+class Plans:
+    """An arm PlanningComponent whose plan() returns `results` in turn (True = success)."""
+
+    def __init__(self, *results):
+        self.results = iter(results)
+        self.calls = 0
+
+    def set_start_state_to_current_state(self):
+        pass
+
+    def set_goal_state(self, **goal):
+        pass
+
+    def plan(self):
+        self.calls += 1
+        ok = next(self.results)
+
+        class Plan:
+            trajectory = None
+            error_code = SimpleNamespace(val=-1)
+
+            def __bool__(self):
+                return ok
+
+        return Plan()
+
+
+def test_a_plan_that_fails_twice_then_succeeds_counts_as_ok():
+    arm = Plans(False, False, True)
+    assert random_goals.try_move(ROBOT, arm) is None
+    assert arm.calls == 3
+
+
+def test_a_plan_that_fails_every_try_records_a_plan_failure():
+    arm = Plans(False, False, False)
+    assert random_goals.try_move(ROBOT, arm) == ('plan', -1)
+    assert arm.calls == random_goals.PLAN_TRIES
+
+
+def test_an_execution_failure_is_recorded_and_not_retried():
+    class Failed:
+        status = 'ABORTED'
+
+        def __bool__(self):
+            return False
+
+    arm = Plans(True, True)
+    robot = SimpleNamespace(execute=lambda trajectory, controllers: Failed())
+    assert random_goals.try_move(robot, arm) == ('execute', 'ABORTED')
+    assert arm.calls == 1

@@ -9,6 +9,7 @@ the measured jaw gets within 2 mm of it in 3 s. With --sag, the arm moves to `re
 
 It prints exactly one token line on every exit path, then exits through os._exit:
 GOALS_OK {"goals": 20, "ok": 20, "gripper": true, "sag_mm": null} or GOALS_FAIL {...}.
+A failed goal adds a "failures" list: its index, the stage (plan or execute) and the code.
 """
 
 import argparse
@@ -29,6 +30,8 @@ DRAWS_PER_GOAL = 100
 JAW_TOL = 0.002  # m, the gripper controller's goal_tolerance
 JAW_WAIT = 3.0  # s
 STATE_WAIT = 10.0  # s for MoveIt's first complete joint state
+# RRTConnect can time out on a slow runner for a goal it solves on a retry.
+PLAN_TRIES = 3
 
 
 def load_limits(path):
@@ -88,11 +91,29 @@ def current_state(component):
     return state
 
 
-def move(robot, component, **goal):
+def try_move(robot, component, **goal):
+    """Plan, then execute. Return None on success, else (stage, MoveIt code or status).
+
+    A failed plan is retried with a fresh plan() up to PLAN_TRIES. A failed execution is not:
+    the arm moved, and a retry would hide a real problem.
+    """
     component.set_start_state_to_current_state()
     component.set_goal_state(**goal)
-    plan = component.plan()
-    return bool(plan) and bool(robot.execute(plan.trajectory, controllers=[]))
+    for _ in range(PLAN_TRIES):
+        plan = component.plan()
+        if plan:
+            break
+    else:
+        code = getattr(plan, 'error_code', None)
+        return 'plan', getattr(code, 'val', code)
+    result = robot.execute(plan.trajectory, controllers=[])
+    if result:
+        return None
+    return 'execute', str(getattr(result, 'status', result))
+
+
+def move(robot, component, **goal):
+    return try_move(robot, component, **goal) is None
 
 
 def grip(robot, hand, name):
@@ -128,7 +149,11 @@ def run(robot, args):
                 if len(goals) == args.count:
                     break
 
-    ok = sum(move(robot, arm, robot_state=g) for g in goals)
+    failures = []
+    for i, g in enumerate(goals):
+        if failure := try_move(robot, arm, robot_state=g):
+            failures.append({'goal': i, 'stage': failure[0], 'code': failure[1]})
+    ok = len(goals) - len(failures)
     hand = robot.get_planning_component('gripper')
     opened = grip(robot, hand, 'open')
     closed = grip(robot, hand, 'closed')
@@ -145,7 +170,8 @@ def run(robot, args):
         commanded.update()
         tip = [s.get_global_link_transform('grasp_center')[:3, 3] for s in (commanded, measured)]
         sag = round(1000.0 * float(np.linalg.norm(tip[0] - tip[1])), 3)
-    return {'goals': args.count, 'ok': ok, 'gripper': gripper, 'sag_mm': sag}
+    return {'goals': args.count, 'ok': ok, 'gripper': gripper, 'sag_mm': sag,
+            **({'failures': failures} if failures else {})}
 
 
 def main():
