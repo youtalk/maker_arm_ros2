@@ -43,7 +43,8 @@ DESK_RGBA = (0.5, 0.4, 0.3, 1.0)  # lab mj/scene.py, the desk geom
 OBSTACLE_RGBA = (0.55, 0.55, 0.55, 1.0)  # lab mj/scene.py, the bin walls
 JAW_TRAVEL_M = 0.0524125  # the URDF's jaw limit, lab assets/urdf_prep.py gripper_travel()
 # Lab robots/frames.py WRIST_CAM_POS_IN_WRIST and WRIST_CAM_ROT_IN_WRIST: 30 mm off the tool
-# axis, 5 mm in front of the motor face, pitched 30 deg back toward grasp_center.
+# axis, 5 mm in front of the motor face, pitched 30 deg back toward grasp_center. The image is
+# turned half a turn about the optical axis from the lab's (see build_model).
 WRIST_CAM_POS = (0.030, 0.0, -0.118)
 WRIST_CAM_PITCH = math.radians(30.0)
 WRIST_FOV_DEG = 70.0  # lab core/cameras.py WRIST_FOV_DEG
@@ -169,9 +170,14 @@ def build_model(urdf_text: str, mesh_dir: Path, scene: dict) -> mujoco.MjModel:
 
     # MuJoCo cameras look along -z with y up: the ROS optical axes (x right, y down, z forward)
     # turned half a turn about x (lab core/cameras.py ROS_TO_MUJOCO_CAM).
+    # The lab's image-down axis is the wrist's +x side (the camera's own side), which put the far
+    # end of the desk at the bottom of the frame. Here the image is upright: right and down are
+    # the lab's turned half a turn about the optical axis, so the lens pose, grasp_center at
+    # the image center and the jaws left and right are unchanged. The lab's mount is
+    # WRIST_CAM_UNVERIFIED: no real camera has fixed either way yet.
     p = WRIST_CAM_PITCH
-    right = (0.0, 1.0, 0.0)
-    down = (math.cos(p), 0.0, -math.sin(p))
+    right = (0.0, -1.0, 0.0)
+    down = (-math.cos(p), 0.0, math.sin(p))
     forward = (-math.sin(p), 0.0, -math.cos(p))
     spec.body('link_007').add_camera(
         name='wrist_camera',
