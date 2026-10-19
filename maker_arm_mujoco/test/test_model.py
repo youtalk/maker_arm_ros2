@@ -44,6 +44,14 @@ def test_the_model_compiles_with_the_seven_driven_joints_and_the_camera():
     assert pair == {'gripper_left_joint', 'gripper_right_joint'}
     cam = model.camera('wrist_camera')
     assert model.body(cam.bodyid[0]).name == 'link_007'
+    # Upright image: the camera's up axis (MuJoCo +y) is the wrist's +x side tilted toward -z,
+    # the lab's image-down axis, and its right axis (MuJoCo +x) is the wrist's -y.
+    axes = np.zeros(9)
+    mujoco.mju_quat2Mat(axes, cam.quat)
+    axes = axes.reshape(3, 3)
+    p = math.radians(30.0)
+    assert np.allclose(axes[:, 1], (math.cos(p), 0.0, -math.sin(p)), atol=1e-9), axes[:, 1]
+    assert np.allclose(axes[:, 0], (0.0, -1.0, 0.0), atol=1e-9), axes[:, 0]
     # base_link is mounted Z-up by the lab's MOUNT_RPY.
     want = np.zeros(4)
     mujoco.mju_euler2Quat(want, np.array(MOUNT_RPY), 'XYZ')
