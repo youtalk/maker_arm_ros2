@@ -48,6 +48,10 @@ WRIST_CAM_POS = (0.030, 0.0, -0.118)
 WRIST_CAM_PITCH = math.radians(30.0)
 WRIST_FOV_DEG = 70.0  # lab core/cameras.py WRIST_FOV_DEG
 IMAGE_SIZE = 224  # lab core/cameras.py IMAGE_WIDTH and IMAGE_HEIGHT: square, so fovy is the FOV
+DOME_LEVEL = 1.0  # lab mj/scene.py DOME_GAIN * the nominal dome_intensity 1000
+SUN_LEVEL = 0.3  # lab mj/scene.py SUN_GAIN * the nominal sun_intensity 2000
+SUN_DIR = (-0.29, 0.19, -0.94)  # unit vector, about 20 degrees off vertical
+SHADOW_MAP_SIZE = 4096  # lab mj/scene.py: the default 1024 is too coarse for the gripper
 
 
 def _share(package):
@@ -179,6 +183,24 @@ def build_model(urdf_text: str, mesh_dir: Path, scene: dict) -> mujoco.MjModel:
         quat=_quat([right, np.negative(down), np.negative(forward)]),
         fovy=WRIST_FOV_DEG,
     )
+
+    # Lighting: the lab's nominal draw (lab mj/scene.py build_spec). A shadowless top-down dome,
+    # half diffuse and half ambient at dome_intensity 1000 (DOME_GAIN 1/1000, neutral white),
+    # and a sun at sun_intensity 2000 (SUN_GAIN 0.3/2000) that casts the only shadow. Without
+    # lights the default headlight left the wrist camera and any viewer nearly black.
+    spec.visual.headlight.active = 0
+    spec.visual.quality.shadowsize = SHADOW_MAP_SIZE
+    dome = spec.worldbody.add_light(name='dome', pos=[0.3, 0.0, 2.0], dir=[0.0, 0.0, -1.0])
+    dome.type = mujoco.mjtLightType.mjLIGHT_DIRECTIONAL
+    dome.castshadow = False
+    dome.diffuse = [0.5 * DOME_LEVEL] * 3
+    dome.ambient = [0.5 * DOME_LEVEL] * 3
+    dome.specular = [0.05, 0.05, 0.05]
+    sun = spec.worldbody.add_light(name='sun', pos=[0.3, 0.0, 2.0], dir=list(SUN_DIR))
+    sun.type = mujoco.mjtLightType.mjLIGHT_DIRECTIONAL
+    sun.castshadow = True
+    sun.diffuse = [SUN_LEVEL] * 3
+    sun.specular = [0.1 * SUN_LEVEL] * 3
     return spec.compile()
 
 
