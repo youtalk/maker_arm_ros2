@@ -40,6 +40,8 @@ COULOMB_NM = {'RS00': 0.1, 'RS02': 0.2}  # INITIAL: lab mj/bench.py COULOMB_NM, 
 CONTACT_SOLREF = (0.005, 1.0)
 OBJECT_CONDIM = 4  # lab mj/scene.py BRICK_CONDIM: torsional friction, a held part does not spin
 DESK_RGBA = (0.5, 0.4, 0.3, 1.0)  # lab mj/scene.py, the desk geom
+DESK_HALF_THICKNESS = 0.02  # lab core/layout.py DESK_SIZE: a 40 mm desk
+NEAR_CLIP_M = 0.005  # wrist camera near clip; the jaws pass within about 10 mm of the lens
 OBSTACLE_RGBA = (0.55, 0.55, 0.55, 1.0)  # lab mj/scene.py, the bin walls
 JAW_TRAVEL_M = 0.0524125  # the URDF's jaw limit, lab assets/urdf_prep.py gripper_travel()
 # Lab robots/frames.py WRIST_CAM_POS_IN_WRIST and WRIST_CAM_ROT_IN_WRIST: 30 mm off the tool
@@ -48,6 +50,10 @@ WRIST_CAM_POS = (0.030, 0.0, -0.118)
 WRIST_CAM_PITCH = math.radians(30.0)
 WRIST_FOV_DEG = 70.0  # lab core/cameras.py WRIST_FOV_DEG
 IMAGE_SIZE = 224  # lab core/cameras.py IMAGE_WIDTH and IMAGE_HEIGHT: square, so fovy is the FOV
+DOME_LEVEL = 1.0  # lab mj/scene.py DOME_GAIN * the nominal dome_intensity 1000
+SUN_LEVEL = 0.3  # lab mj/scene.py SUN_GAIN * the nominal sun_intensity 2000
+SUN_DIR = (-0.29, 0.19, -0.94)  # unit vector, about 20 degrees off vertical
+SHADOW_MAP_SIZE = 4096  # lab mj/scene.py: the default 1024 is too coarse for the gripper
 
 
 def _share(package):
@@ -131,11 +137,13 @@ def build_model(urdf_text: str, mesh_dir: Path, scene: dict) -> mujoco.MjModel:
         joint.frictionloss = COULOMB_NM[j['model']] * s
 
     scene_geoms = [
+        # A box, as the lab's mj/scene.py desk, not lab mj/bench.py's plane: the sun's shadow
+        # map streaked a plane desk with shadow acne. The top face stays at desk_z.
         spec.worldbody.add_geom(
             name='desk',
-            type=mujoco.mjtGeom.mjGEOM_PLANE,
-            size=[1.0, 1.0, 0.01],  # lab mj/bench.py, the desk plane
-            pos=[0.0, 0.0, scene['desk_z']],
+            type=mujoco.mjtGeom.mjGEOM_BOX,
+            size=[1.0, 1.0, DESK_HALF_THICKNESS],
+            pos=[0.0, 0.0, scene['desk_z'] - DESK_HALF_THICKNESS],
             rgba=list(DESK_RGBA),
         )
     ]
@@ -179,7 +187,30 @@ def build_model(urdf_text: str, mesh_dir: Path, scene: dict) -> mujoco.MjModel:
         quat=_quat([right, np.negative(down), np.negative(forward)]),
         fovy=WRIST_FOV_DEG,
     )
-    return spec.compile()
+
+    # Lighting: the lab's nominal draw (lab mj/scene.py build_spec). A shadowless top-down dome,
+    # half diffuse and half ambient at dome_intensity 1000 (DOME_GAIN 1/1000, neutral white),
+    # and a sun at sun_intensity 2000 (SUN_GAIN 0.3/2000) that casts the only shadow. Without
+    # lights the default headlight left the wrist camera and any viewer nearly black.
+    spec.visual.headlight.active = 0
+    spec.visual.quality.shadowsize = SHADOW_MAP_SIZE
+    dome = spec.worldbody.add_light(name='dome', pos=[0.3, 0.0, 2.0], dir=[0.0, 0.0, -1.0])
+    dome.type = mujoco.mjtLightType.mjLIGHT_DIRECTIONAL
+    dome.castshadow = False
+    dome.diffuse = [0.5 * DOME_LEVEL] * 3
+    dome.ambient = [0.5 * DOME_LEVEL] * 3
+    dome.specular = [0.05, 0.05, 0.05]
+    sun = spec.worldbody.add_light(name='sun', pos=[0.3, 0.0, 2.0], dir=list(SUN_DIR))
+    sun.type = mujoco.mjtLightType.mjLIGHT_DIRECTIONAL
+    sun.castshadow = True
+    sun.diffuse = [SUN_LEVEL] * 3
+    sun.specular = [0.1 * SUN_LEVEL] * 3
+    model = spec.compile()
+    # The near clip is vis.map.znear x stat.extent, and the box desk (planes do not count)
+    # raised the extent from 0.66 to 2.83 m. Pin the clip at NEAR_CLIP_M so the jaws nearest
+    # the lens are not cut (lab mj/scene.py notes the same failure at K 150).
+    model.vis.map.znear = NEAR_CLIP_M / model.stat.extent
+    return model
 
 
 class Plant:
