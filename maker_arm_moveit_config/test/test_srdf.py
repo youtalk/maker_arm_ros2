@@ -66,6 +66,35 @@ def test_home_is_the_zero_pose_pulled_0p1_inside_the_urdf_limits():
             assert abs(states("arm")["home"][j.get("name")] - want) < 1e-9
 
 
+# Servo scales and halts near its joint bound (MoveIt limit plus joint_limit_margins). A 1 s push
+# at 0.05 m/s moved link_005 toward its limit by up to 0.15 rad (-1.3 reported JOINT_BOUND
+# at the end of a push, -1.25 never did), so the Servo-safe states keep this travel beyond the bound.
+SERVO_TRAVEL_HEADROOM = 0.2
+SERVO_STATES = ("work", "fold")  # ready and home are singularities: Servo halts there anyway
+
+
+def servo_margins():
+    margins = yaml.safe_load((PKG / "config" / "servo.yaml").read_text())["joint_limit_margins"]
+    return margins * len(ARM) if len(margins) == 1 else margins
+
+
+def test_servo_keeps_the_singularity_and_margin_settings_the_poses_were_measured_with():
+    servo = yaml.safe_load((PKG / "config" / "servo.yaml").read_text())
+    assert servo["hard_stop_singularity_threshold"] == 30.0
+    assert servo["lower_singularity_threshold"] == 17.0
+    assert len(servo_margins()) == len(ARM)
+
+
+def test_the_servo_states_keep_clear_of_servos_joint_bound():
+    margins = dict(zip((f"link_00{i}_joint" for i in range(2, 8)), servo_margins()))
+    arm = states("arm")
+    for name in SERVO_STATES:
+        for j, v in arm[name].items():
+            clear = margins[j] + SERVO_TRAVEL_HEADROOM - 1e-9
+            lo, hi = LIMITS[j]["min_position"], LIMITS[j]["max_position"]
+            assert v - lo >= clear and hi - v >= clear, (name, j, v)
+
+
 def test_collisions_were_generated():
     assert len(ROOT.findall("disable_collisions")) > 20
 
