@@ -33,11 +33,19 @@ def test_the_arm_group_is_the_mount_to_grasp_center_chain():
 def test_the_named_states():
     arm = states("arm")
     assert arm["ready"] == dict(zip(ARM, (0.0, -1.79, 2.05, -1.3, -0.22, 0.0)))
+    # MoveIt Servo drives from work and fold. It halts at ready and home (singularities).
+    assert arm["work"] == dict(zip(ARM, (0.0, -0.95, 1.2, -0.7, -0.1, 0.0)))
+    assert arm["fold"] == dict(zip(ARM, (0.0, -1.6, 1.6, -1.25, -0.3, 0.0)))
     # 0.5 mm inside the jaw limits: an empty close lands a few um past its target.
     jaw = LIMITS["gripper_left_joint"]
     want = {"open": jaw["max_position"] - 0.0005, "closed": jaw["min_position"] + 0.0005}
     for name, value in want.items():
         assert abs(states("gripper")[name]["gripper_left_joint"] - value) < 1e-9, name
+
+
+def test_the_servo_states_come_first():
+    # Conduit offers the arm's states as buttons in SRDF order.
+    assert list(states("arm")) == ["work", "fold", "ready", "home"]
 
 
 def test_the_named_states_lie_inside_the_moveit_limits():

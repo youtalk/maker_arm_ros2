@@ -180,7 +180,7 @@ Use these values to connect Conduit.
 | Gripper closed | 0.0017765 m per jaw |
 | Wrist camera (simulation only) | `/wrist_camera/image_raw/compressed` |
 
-Servo halts near the `ready` pose because of a singularity. Before you teleoperate, move away from `ready`. Use the `home` pose or a MoveIt goal.
+Servo halts at the `ready` and `home` poses because both are singularities. Before you teleoperate, move to `work` or `fold`. Servo drives from both.
 
 ## Safety rules
 
