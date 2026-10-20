@@ -36,6 +36,16 @@ def test_servo_reads_the_planning_limits():
         assert f"robot_description_planning.joint_limits.link_00{j}_joint.max_velocity" in names
 
 
+def test_move_group_publishes_the_srdf_but_not_the_urdf():
+    nodes = [e for e in load("stack").generate_launch_description().entities if isinstance(e, Node)]
+    move_group = next(n for n in nodes if n.node_executable == "move_group")
+    params = {"".join(t.text for t in key): value
+              for p in move_group._Node__parameters for key, value in p.items()}
+    assert params["publish_robot_description_semantic"] is True
+    # robot_state_publisher owns /robot_description.
+    assert "publish_robot_description" not in params
+
+
 def real_ctx(**over):
     ctx = LaunchContext()
     ctx.launch_configurations.update(

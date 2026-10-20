@@ -64,7 +64,10 @@ def generate_launch_description():
         },
         "controllers": _yaml(mc, "moveit_controllers.yaml"),
     }
-    moveit_params = [description, *moveit.values(), {"use_sim_time": False}]
+    # move_group publishes the SRDF on /robot_description_semantic (transient local) for hosts and
+    # apps that read it from the topic. robot_state_publisher already publishes /robot_description.
+    moveit_params = [description, *moveit.values(),
+                     {"use_sim_time": False, "publish_robot_description_semantic": True}]
     # The planning limits, so Servo holds the profile-derived limits and not the URDF's.
     servo_params = [
         description,
