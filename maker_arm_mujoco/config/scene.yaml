@@ -2,7 +2,7 @@
 # read this file and apply scene.perturbed(scene, seed) to it.
 # Reach: the lab picked parts top-down at x 0.13 to 0.29 m and |y| up to 0.18 m
 # (core/layout.py SCATTER_X, SCATTER_Y), and the ready pose puts grasp_center at
-# (0.2749, 0.0371, 0.1646).
+# (0.2763, 0.0, 0.1607).
 desk_z: 0.0  # the lab's desk top (core/layout.py DESK_POS)
 objects:
   - name: block

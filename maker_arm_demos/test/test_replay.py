@@ -10,7 +10,7 @@ from maker_arm_demos.replay import (
 )
 
 ARM = [f'link_00{i}_joint' for i in range(2, 8)]
-READY = [0.0, -1.79, 2.05, -1.3, -0.22, 0.0]
+READY = [0.0, -1.79, 2.05, -1.3, 0.0, 0.0]
 with open(os.path.join(get_package_share_directory('maker_arm_moveit_config'), 'config',
                        'joint_limits.yaml')) as f:
     JOINTS = yaml.safe_load(f)['joint_limits']
@@ -59,7 +59,7 @@ def test_replay_refuses_an_unknown_joint_anywhere():
 
 def test_replay_refuses_a_point_outside_the_moveit_limits():
     check_limits(record(), JOINTS)
-    outside = [0.0, 0.0, 2.05, -1.3, -0.22, 0.0]  # link_003_joint stops at -0.05
+    outside = [0.0, 0.0, 2.05, -1.3, 0.0, 0.0]  # link_003_joint stops at -0.05
     with pytest.raises(ValueError, match='link_003_joint'):
         check_limits(record(points=[(0.0, READY), (5.0, outside)]), JOINTS)
     with pytest.raises(ValueError, match='gripper_left_joint'):
@@ -70,7 +70,7 @@ def test_replay_refuses_a_point_outside_the_moveit_limits():
 
 
 def test_replay_refuses_a_record_faster_than_the_moveit_limits():
-    jump = [0.0, -1.79, 2.05, -1.3, -0.22, 1.0]  # link_007_joint 1 rad in 0.1 s: 10 rad/s
+    jump = [0.0, -1.79, 2.05, -1.3, 0.0, 1.0]  # link_007_joint 1 rad in 0.1 s: 10 rad/s
     with pytest.raises(ValueError, match='link_007_joint'):
         check_limits(record(points=[(0.0, READY), (0.1, jump)]), JOINTS)
     with pytest.raises(ValueError, match='time'):
@@ -108,7 +108,7 @@ def test_a_raised_arm_adds_its_height_and_stands_at_least_5_cm():
 def test_the_lowest_fingertip_comes_from_fk_over_the_whole_record():
     """FK on the planning model, with no live stack."""
     low, t = lowest_tip(record(points=[(0.0, READY)]))
-    assert t == 0.0 and low == pytest.approx(0.1333, abs=0.001)  # tips under grasp_center
-    down = [0.0, -2.1, 2.05, -1.3, -0.22, 0.0]  # the shoulder lowers the tool
+    assert t == 0.0 and low == pytest.approx(0.1287, abs=0.001)  # tips under grasp_center
+    down = [0.0, -2.1, 2.05, -1.3, 0.0, 0.0]  # the shoulder lowers the tool
     low, t = lowest_tip(record(points=[(0.0, READY), (1.0, down), (2.0, READY)]))
-    assert t == 1.0 and low == pytest.approx(0.0438, abs=0.001)
+    assert t == 1.0 and low == pytest.approx(0.0388, abs=0.001)

@@ -32,7 +32,8 @@ def test_the_arm_group_is_the_mount_to_grasp_center_chain():
 
 def test_the_named_states():
     arm = states("arm")
-    assert arm["ready"] == dict(zip(ARM, (0.0, -1.79, 2.05, -1.3, -0.22, 0.0)))
+    # ready is the lab's HOME_JOINT_POS with link_006 at 0 (not -0.22): left-right symmetric.
+    assert arm["ready"] == dict(zip(ARM, (0.0, -1.79, 2.05, -1.3, 0.0, 0.0)))
     # MoveIt Servo drives from work and stand. It halts at ready and home (singularities).
     # stand keeps link_006 at 0 (the gripper in the arm's plane). work keeps it at -0.1: at 0,
     # Servo halted for a singularity on -x.

@@ -15,7 +15,7 @@ check_collisions: true
 # Pinned to the moveit_servo 2.12 defaults on purpose: the Servo-safe arm states (work, stand)
 # were measured with these values, and test_srdf.py reads joint_limit_margins to keep those
 # poses clear of Servo's joint bound. The Jacobian condition number at work is 25.4 and at stand
-# 21.7, between the lower threshold and the hard stop; at ready (35.7) and home (42.2) Servo
+# 21.7, between the lower threshold and the hard stop; at ready (35.2) and home (42.2) Servo
 # halts. Changing any of these invalidates the measured poses.
 hard_stop_singularity_threshold: 30.0
 lower_singularity_threshold: 17.0

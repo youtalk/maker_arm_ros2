@@ -9,7 +9,8 @@ from urdf_parser_py.urdf import URDF
 
 PKG = Path(__file__).resolve().parents[1]
 XACRO = PKG / "urdf" / "maker_arm.urdf.xacro"
-HOME = {
+# The lab's robots/frames.py HOME_JOINT_POS. The ready state levels its link_006 to 0.
+LAB_HOME = {
     "link_002_joint": 0.0,
     "link_003_joint": -1.79,
     "link_004_joint": 2.05,
@@ -17,7 +18,8 @@ HOME = {
     "link_006_joint": -0.22,
     "link_007_joint": 0.0,
 }
-ARM_AND_GRIPPER = [*HOME, "gripper_left_joint"]
+READY = {**LAB_HOME, "link_006_joint": 0.0}
+ARM_AND_GRIPPER = [*LAB_HOME, "gripper_left_joint"]
 
 
 def render(**mappings):
@@ -71,10 +73,17 @@ def test_the_xacro_renders_with_mount_link_as_root():
     assert np.allclose(joint.origin.rpy, (math.pi / 2, 0, math.pi))
 
 
-def test_the_ready_pose_puts_grasp_center_where_the_lab_measured_it():
+def test_the_lab_home_pose_puts_grasp_center_where_the_lab_measured_it():
     robot = robot_of(render())
-    pos = fk(robot, "grasp_center", HOME)[:3, 3]
+    pos = fk(robot, "grasp_center", LAB_HOME)[:3, 3]
     assert np.allclose(pos, (0.2749, 0.0371, 0.1646), atol=0.002), pos
+
+
+def test_the_ready_pose_puts_grasp_center_in_the_arms_plane():
+    robot = robot_of(render())
+    pos = fk(robot, "grasp_center", READY)[:3, 3]
+    assert np.allclose(pos, (0.2763, 0.0, 0.1607), atol=0.002), pos
+    assert abs(pos[1]) < 1e-6, pos
 
 
 def test_every_mesh_uri_resolves_to_a_file():

@@ -52,7 +52,7 @@ STOP_SPEED = 0.005  # m/s
 WINDOW = 0.1  # s
 MAX_STOP_MS = 200.0
 # Servo halts when the Jacobian's condition number reaches hard_stop_singularity_threshold
-# (30, the default). At `ready` it is 35.7. From START, a search over this arm's model keeps it
+# (30, the default). At `ready` it is 35.2. From START, a search over this arm's model keeps it
 # between 14.7 and 20.1 along the whole 0.2 m line, and the tip 0.25 m above the desk.
 START = [-1.32, -0.84, 0.58, 0.39, 0.72, 0.04]
 WAIT = 10.0  # s for each server, topic, transform and goal
