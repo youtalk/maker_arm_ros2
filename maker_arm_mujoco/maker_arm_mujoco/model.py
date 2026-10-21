@@ -27,7 +27,9 @@ JOINTS = (
     'link_007_joint',
     'gripper_left_joint',
 )
-READY = (0.0, -1.79, 2.05, -1.3, -0.22, 0.0)  # lab robots/frames.py HOME_JOINT_POS
+# The lab's home (robots/frames.py HOME_JOINT_POS) with link_006 levelled from -0.22 to 0,
+# so the gripper stays in the arm's plane.
+READY = (0.0, -1.79, 2.05, -1.3, 0.0, 0.0)
 
 PHYSICS_DT = 0.001  # lab mj/bench.py PHYSICS_DT
 # Per motor, in the motor frame. Motor 7's values reach the jaw through the gripper map.
