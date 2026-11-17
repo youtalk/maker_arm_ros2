@@ -179,6 +179,20 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
 
     Move each joint by hand. If RViz moves the joint the other way, the direction is wrong. If the pose does not match the arm, the offset is wrong. The jaw follows the gripper map. Add `profile:=<file>` for another profile. Add `gripper_map:=<file>` for a file with one line `a,b`. Without it, the CLI default map applies.
 
+    Start each hand motion from the folded rest. The table gives one motion for each joint and the change of the joint value. To see the values, run `ros2 topic echo /joint_states` in a second terminal. If a value changes the other way, the direction of that joint is wrong. Stop, and do not launch.
+
+    | Joint | Hand motion from the folded rest | Value |
+    | --- | --- | --- |
+    | J1 `link_002_joint` | Turn the arm on its base, clockwise as seen from above. | more positive |
+    | J2 `link_003_joint` | Lift the upper arm away from the base. | more negative |
+    | J3 `link_004_joint` | Lift the forearm away from the upper arm. | more positive |
+    | J4 `link_005_joint` | Tip the gripper so that the jaw tips go up. | more positive |
+    | J5 `link_006_joint` | Swing the gripper clockwise as seen from above. | more positive |
+    | J6 `link_007_joint` | Turn the gripper clockwise as seen from the jaw tips. | more positive |
+    | Jaw `gripper_left_joint` | Open the jaws. | more positive |
+
+    `scan` without `--watch` prints motor angles. There, J5 changes the other way, and the gripper value goes more negative as the jaws open.
+
 7. Fold the arm back into its rest and support it. Enable holds the arm where it is, and `go_home` (step 10) moves the arm only from the folded rest. Then launch the stack. Without `profile:=`, it loads the shipped caps 0.5 profile. For an arm with another zero, add `profile:=$HOME/maker_arm/real_profile.json`.
 
     ```sh

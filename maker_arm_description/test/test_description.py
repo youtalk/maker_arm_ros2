@@ -24,6 +24,8 @@ LAB_HOME = {
 # vendor wrist_flex stop.
 READY = dict(zip(LAB_HOME, (0.0, -1.5518, 1.6901, -1.038, 0.0, 0.0)))
 ARM_AND_GRIPPER = [*LAB_HOME, "gripper_left_joint"]
+# The owner's folded rest (the P0 scan), in degrees in the URDF frame.
+REST = dict(zip(LAB_HOME, (math.radians(d) for d in (-8.0, 0.0, 7.9, -24.5, 2.6, -3.2))))
 
 
 def render(**mappings):
@@ -88,6 +90,28 @@ def test_the_ready_pose_puts_grasp_center_in_the_arms_plane():
     pos = fk(robot, "grasp_center", READY)[:3, 3]
     assert np.allclose(pos, (0.2763, 0.0, 0.1607), atol=0.002), pos
     assert abs(pos[1]) < 1e-6, pos
+
+
+def test_the_readme_torque_off_table_has_the_urdf_signs():
+    """Each row of the README table: +0.05 rad from the folded rest moves the arm that way."""
+    robot = robot_of(render())
+
+    def rise(joint, link):  # the height change of link (mount_link is z up)
+        return fk(robot, link, {**REST, joint: REST[joint] + 0.05})[2, 3] - fk(robot, link, REST)[2, 3]
+
+    def axis(joint):  # in mount_link. Seen from where it points, + turns counterclockwise.
+        j = robot.joint_map[joint]
+        return fk(robot, j.child, REST)[:3, :3] @ j.axis
+
+    assert axis("link_002_joint")[2] < -0.99  # + is clockwise as seen from above
+    assert rise("link_003_joint", "link_004") < 0  # + lowers the elbow, so a lift is -
+    assert rise("link_004_joint", "link_005") > 0  # + lifts the forearm off the upper arm
+    assert rise("link_005_joint", "grasp_center") > 0  # + raises the jaw tips
+    assert axis("link_006_joint")[2] < -0.8  # + is clockwise as seen from above
+    wrist_to_tips = fk(robot, "grasp_center", REST)[:3, 3] - fk(robot, "link_007", REST)[:3, 3]
+    wrist_to_tips /= np.linalg.norm(wrist_to_tips)
+    assert axis("link_007_joint") @ wrist_to_tips < -0.99  # + is clockwise as seen from the tips
+    assert robot.joint_map["gripper_left_joint"].limit.lower == 0.0  # 0 is closed, + opens
 
 
 def test_every_mesh_uri_resolves_to_a_file():
