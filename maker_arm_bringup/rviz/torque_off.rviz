@@ -11,4 +11,15 @@ Visualization Manager:
       Enabled: true
       Description Topic:
         Value: /robot_description
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 0.9
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0.15
+      Pitch: 0.45
+      Yaw: 0.8
+      Target Frame: <Fixed Frame>
 Window Geometry: {}
