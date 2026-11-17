@@ -86,7 +86,7 @@ The plant publishes the wrist camera on `/wrist_camera/image_raw/compressed`. La
 
 The plant reports motor angles as the real arm does, with motor 5 turned against the URDF joint. So the daemon loads a shipped profile with the vendor calibration. The default is `real_profile_nominal.json`. The calibration runs in simulation before it runs on the arm.
 
-To rehearse the first launch of a real arm, start the plant at the folded rest with the jaw closed, and use the caps 0.5 profile. Then do steps 10 to 13 of the real-arm section.
+You can rehearse the first launch of a real arm in simulation. Start the plant at the folded rest with the jaw closed, and use the caps 0.5 profile. Then do steps 10 to 13 of the real-arm section.
 
 ```sh
 ros2 launch maker_arm_bringup sim.launch.py rviz:=true start:=rest \
