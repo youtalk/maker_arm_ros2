@@ -1,6 +1,6 @@
 {
   "control_rate_hz": 200.0,
-  "feedback_timeout": 0.2,
+  "feedback_timeout": 0.25,
   "joints": [
     {
       "direction": 1.0,

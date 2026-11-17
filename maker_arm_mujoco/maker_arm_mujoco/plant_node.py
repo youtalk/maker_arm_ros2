@@ -57,17 +57,17 @@ def answer(sock, bank, now_s, log):
     dropped = 0
     while True:
         try:
-            can_id, _, data = CAN_FRAME.unpack(sock.recv(CAN_FRAME.size))
+            can_id, length, data = CAN_FRAME.unpack(sock.recv(CAN_FRAME.size))
         except BlockingIOError:
             return dropped
         except OSError as e:  # the bus is down: keep stepping, the daemon sees silence
             log.warning(f'CAN receive failed: {e.strerror}', throttle_duration_sec=LOG_EVERY_S)
             return dropped
-        if not can_id & socket.CAN_EFF_FLAG:
-            continue  # RobStride frames carry 29-bit ids
-        for rid, rdata in bank.handle(can_id & socket.CAN_EFF_MASK, data, now_s):
+        if can_id & socket.CAN_EFF_FLAG:
+            continue  # MIT frames carry 11-bit ids
+        for rid, rdata in bank.handle(can_id, data[:length], now_s):
             try:
-                sock.send(CAN_FRAME.pack(rid | socket.CAN_EFF_FLAG, len(rdata), rdata))
+                sock.send(CAN_FRAME.pack(rid, len(rdata), rdata))
             except OSError as e:  # a full queue (EAGAIN, ENOBUFS) or a downed bus
                 dropped += 1
                 log.warning(f'CAN send failed: {e.strerror}', throttle_duration_sec=LOG_EVERY_S)
@@ -91,11 +91,13 @@ class PlantNode(Node):
         interface = self.declare_parameter('interface', 'vcan0').value
         scene = self.declare_parameter('scene', str(SHARE / 'config' / 'scene.yaml')).value
         seed = self.declare_parameter('seed', 0).value
+        params_supported = self.declare_parameter('params_supported', False).value
         self.camera_hz = self.declare_parameter('camera_hz', 15.0).value
         self.sock = open_can(interface)
         self.scene = perturbed(load_scene(scene), seed)
         profile = sim_profile()
-        self.plant = Plant(build_model(*description(), self.scene), profile, ready(profile))
+        self.plant = Plant(
+            build_model(*description(), self.scene), profile, ready(profile), params_supported)
         self.lock = threading.Lock()
         self.image_pub = self.create_publisher(
             CompressedImage, '/wrist_camera/image_raw/compressed', 1)

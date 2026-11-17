@@ -230,9 +230,10 @@ class Plant:
     its start pose: the quickstart has the user support the real arm before the first launch.
     """
 
-    def __init__(self, model, profile, q0):
+    def __init__(self, model, profile, q0, params_supported=False):
         self.model, self.data = model, mujoco.MjData(model)
-        self.bank = MotorBank([j['model'] for j in profile['joints']])
+        self.bank = MotorBank(
+            [j['model'] for j in profile['joints']], params_supported=params_supported)
         a, b = grip_map(profile)
         self.scale = np.array([1.0] * 6 + [2 / a])  # motor units per joint unit
         self.shift = np.array([0.0] * 6 + [-b / a])
