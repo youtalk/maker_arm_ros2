@@ -7,9 +7,10 @@ After enable on an arm in the vendor zero, J2, J3 and the jaw rest just outside 
 planning range, and MoveIt refuses to plan from there. This sends one FollowJointTrajectory
 goal that reaches `home` in DURATION_S and one GripperCommand goal at `closed`. It reads both
 states from move_group's robot_description_semantic parameter. It does not go through MoveIt,
-so it checks no collisions: run it from the folded rest, right after enable.
+so it checks no collisions: run it from the folded rest, right after enable. It sends nothing
+when an arm joint on /joint_states is more than MAX_TRAVEL_RAD from `home`.
 
-It exits 1 with a message when a goal is rejected or fails.
+It exits 1 with a message when it refuses to move, or when a goal is rejected or fails.
 """
 
 import sys
@@ -21,12 +22,18 @@ from control_msgs.action import FollowJointTrajectory, GripperCommand
 from rcl_interfaces.msg import ParameterType
 from rcl_interfaces.srv import GetParameters
 from rclpy.action import ActionClient
+from rclpy.task import Future
+from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectoryPoint
 
 ARM_ACTION = "/arm_controller/follow_joint_trajectory"
 GRIPPER_ACTION = "/gripper_controller/gripper_cmd"
 DURATION_S = 5  # a slow move: the arm starts at most a few degrees from home
 WAIT_S = 10.0  # for move_group's parameter, each action server and each goal reply
+JOINT_STATE_WAIT_S = 2.0
+# The folded rest of the real arm is up to 0.43 rad from home (J4 in the P0 scan). work, stand
+# and ready are 0.8 rad or more away on J2, so a run from a raised pose is refused.
+MAX_TRAVEL_RAD = 0.6
 
 
 def state(srdf, group, name):
@@ -50,6 +57,16 @@ def goals(srdf):
     return arm, hand
 
 
+def check_start(home, measured):
+    """Raise unless every joint of home is within MAX_TRAVEL_RAD of its measured position."""
+    for name, q in home.items():
+        d = abs(measured.get(name, float("nan")) - q)
+        if not d <= MAX_TRAVEL_RAD:  # NaN too
+            raise RuntimeError(
+                f"{name} is {d:.3f} rad from home (limit {MAX_TRAVEL_RAD}). Run go_home only from "
+                "the folded rest right after enable. Use MoveIt for any other start.")
+
+
 def wait(node, future, timeout, what):
     rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
     if not future.done():
@@ -69,6 +86,16 @@ def semantic(node):
     return value.string_value
 
 
+def joint_states(node):
+    """Return {joint: position} of one /joint_states message."""
+    future = Future()
+    sub = node.create_subscription(
+        JointState, "/joint_states", lambda m: future.done() or future.set_result(m), 10)
+    msg = wait(node, future, JOINT_STATE_WAIT_S, "/joint_states message")
+    node.destroy_subscription(sub)
+    return dict(zip(msg.name, msg.position))
+
+
 def send(node, action, name, goal, ok):
     """Send goal to the action server `name`. Raise unless it succeeds and ok(result) holds."""
     client = ActionClient(node, action, name)
@@ -86,7 +113,9 @@ def main():
     rclpy.init()
     node = rclpy.create_node("go_home")
     try:
-        arm, hand = goals(semantic(node))
+        srdf = semantic(node)
+        arm, hand = goals(srdf)
+        check_start(state(srdf, "arm", "home"), joint_states(node))
         send(node, FollowJointTrajectory, ARM_ACTION, arm,
              lambda r: r.error_code == FollowJointTrajectory.Result.SUCCESSFUL)
         send(node, GripperCommand, GRIPPER_ACTION, hand, lambda r: r.reached_goal)
