@@ -177,7 +177,7 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
     ros2 launch maker_arm_bringup torque_off.launch.py
     ```
 
-    Move each joint by hand. If RViz moves the joint the other way, the direction is wrong. If the pose does not match the arm, the offset is wrong. The jaw follows the gripper map. Add `profile:=<file>` for another profile. Add `gripper_map:=<file>` for a file with one line `a,b`. Without it, the CLI default map applies.
+    Move each joint by hand. If RViz moves the joint the other way, the direction is wrong. If the pose does not match the arm, the offset is wrong. The jaw follows the gripper map. Add `profile:=<file>` for another profile. Add `gripper_map:=<file>` for a file with one line `a,b`. Without it, the CLI default map applies. If a joint reads nan, the view names that joint once a second. The CLI also prints the fault text of a motor that reports a fault.
 
     Start each hand motion from the folded rest. The table gives one motion for each joint and the change of the joint value. To see the values, run `ros2 topic echo /joint_states` in a second terminal. If a value changes the other way, the direction of that joint is wrong. Stop, and do not launch.
 
@@ -232,11 +232,11 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
 
 If you stop the launch with Ctrl-C, the daemon keeps holding the arm. To turn the motors off, run the release step.
 
-If a motor reports a fault, the daemon holds the arm. A gripper fault also disables the gripper motor. The daemon never enables a motor again by itself. To recover, do these steps:
+If a motor reports a fault, the daemon holds the arm. A gripper fault also disables the gripper motor. The daemon never enables a motor again by itself. The `fault` field of the `STATUS` line from `maker-arm-cli status --interface can0` gives the fault code. Code 8 means that a motor restarted, for example after an emergency stop. Code 9 means a CAN send or receive error. To recover, do these steps:
 
 1. Support the arm.
-2. Press and release the emergency stop. This cuts the motor power and clears the fault. The vendor's `maker-arm scan --clear-faults` also clears it.
-3. Release the arm with `ros2 run maker_arm_bringup release`. The daemon stays in its fault hold until you do this.
+2. Press and release the emergency stop. This cuts the motor power and clears the fault. The vendor's `maker-arm scan --clear-faults` also clears it. The daemon keeps holding.
+3. Release the arm with `ros2 run maker_arm_bringup release`. The daemon stays in its fault hold until you do this. If `release` names motors that did not confirm the disable, press the emergency stop.
 4. Find the cause of the fault. Then start the real-arm steps again from step 4.
 
 ## Cameras
