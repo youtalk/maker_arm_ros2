@@ -82,9 +82,16 @@ The MuJoCo plant answers on a virtual CAN bus as the arm's seven motors. The dae
     ros2 launch maker_arm_bringup sim.launch.py rviz:=true
     ```
 
-The plant publishes the wrist camera on `/wrist_camera/image_raw/compressed`. Launch arguments are `scene` (a scene file) and `seed` (the scene perturbation).
+The plant publishes the wrist camera on `/wrist_camera/image_raw/compressed`. Launch arguments are `scene` (a scene file), `seed` (the scene perturbation), `profile` (the daemon's profile) and `start` (the start pose of the plant, `ready` or `rest`).
 
-The plant reports motor angles as the real arm does, with motor 5 turned against the URDF joint. So the daemon loads the shipped `real_profile_nominal.json`, and the calibration runs in simulation before it runs on the arm.
+The plant reports motor angles as the real arm does, with motor 5 turned against the URDF joint. So the daemon loads a shipped profile with the vendor calibration. The default is `real_profile_nominal.json`. The calibration runs in simulation before it runs on the arm.
+
+To rehearse the first launch of a real arm, start the plant at the folded rest with the jaw closed, and use the caps 0.5 profile. Then do steps 10 to 13 of the real-arm section.
+
+```sh
+ros2 launch maker_arm_bringup sim.launch.py rviz:=true start:=rest \
+    profile:=$(ros2 pkg prefix maker_arm_description)/share/maker_arm_description/config/daemon/real_profile_caps05.json
+```
 
 ### Demos
 
@@ -139,7 +146,7 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
 
     `restart-ms` brings the interface back after a bus-off. A bus-off can come, for example, after frames that no powered motor acknowledged.
 
-3. Support the arm with your hand or a stand. Do this before the first launch and before every release.
+3. Support the arm with your hand or a stand. Do this before the first launch and before every release. Now release the emergency stop to power the motors. No motor is enabled yet. Keep a hand near the emergency stop.
 4. Ask the daemon for its status. A daemon can already hold the arm.
 
     ```sh
@@ -148,11 +155,13 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
 
     If it prints a `STATUS` line, a daemon holds the arm. Do not run `doctor`. Go to step 7. In that case `doctor` refuses anyway, because the daemon holds the bus lock.
 
-5. Run the daemon's check on the CAN interface. If it reports a problem, stop here.
+5. Run the daemon's check on the CAN interface.
 
     ```sh
     maker-arm-cli --can can0 doctor
     ```
+
+    If the motors have no parameter access, `doctor` prints `WARNING:` lines about the firmware and the motor watchdog. These warnings are expected, and the check still passes. If it prints `doctor found problems`, stop here.
 
 6. Check the calibration with no torque. The motors stay off for this whole step. Fold the arm at rest and run `scan`.
 
@@ -170,7 +179,7 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
 
     Move each joint by hand. If RViz moves the joint the other way, the direction is wrong. If the pose does not match the arm, the offset is wrong. The jaw follows the gripper map. Add `profile:=<file>` for another profile. Add `gripper_map:=<file>` for a file with one line `a,b`. Without it, the CLI default map applies.
 
-7. Launch the stack. Without `profile:=`, it loads the shipped caps 0.5 profile. For an arm with another zero, add `profile:=$HOME/maker_arm/real_profile.json`.
+7. Fold the arm back into its rest and support it. Enable holds the arm where it is, and `go_home` (step 10) moves the arm only from the folded rest. Then launch the stack. Without `profile:=`, it loads the shipped caps 0.5 profile. For an arm with another zero, add `profile:=$HOME/maker_arm/real_profile.json`.
 
     ```sh
     ros2 launch maker_arm_bringup real.launch.py rviz:=true
@@ -184,6 +193,8 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
     ```sh
     ros2 run maker_arm_bringup go_home
     ```
+
+    To stop the move, press Ctrl-C. `go_home` then cancels its goal, and the arm holds where it is. After the move, `go_home` reads the joints again. If it reports that a joint stopped away from its goal, stop. Support the arm and release it (step 15).
 
 11. In RViz, open the MotionPlanning panel. Set the velocity and acceleration scaling to 0.1. Plan and execute the named pose `home`. It is the folded rest, pulled inside the limits.
 12. Compare the real arm with RViz. If they differ, stop. Support the arm and release it. A bad zero or a wrong joint map causes this.
@@ -206,6 +217,13 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
     Only a typed `RELEASE` disables the motors.
 
 If you stop the launch with Ctrl-C, the daemon keeps holding the arm. To turn the motors off, run the release step.
+
+If a motor reports a fault, the daemon holds the arm. A gripper fault also disables the gripper motor. The daemon never enables a motor again by itself. To recover, do these steps:
+
+1. Support the arm.
+2. Press and release the emergency stop. This cuts the motor power and clears the fault. The vendor's `maker-arm scan --clear-faults` also clears it.
+3. Release the arm with `ros2 run maker_arm_bringup release`. The daemon stays in its fault hold until you do this.
+4. Find the cause of the fault. Then start the real-arm steps again from step 4.
 
 ## Cameras
 
@@ -239,13 +257,13 @@ The open and closed values come from the vendor's gripper preview map. Measure t
 
 On the real arm, run `ros2 run maker_arm_bringup go_home` once after the launch, before you use Conduit's poses. Conduit's poses go through MoveIt, and MoveIt cannot plan from the rest pose after enable.
 
-Before you teleoperate, move to `work` or `stand`. Servo halts at `home`, because `home` is a singularity. At `ready`, J4 sits near its limit, so Servo stops a push that turns J4 further down. Servo moves along every axis from `work` and `stand`, but it slows near them: in the simulation, a 1 s push delivered about 20 to 100% of the commanded motion. The real arm is not yet verified.
+Before you teleoperate, move to `work` or `stand`. Servo halts at `home`, because `home` is a singularity. At `ready`, J4 sits near its limit, so Servo stops a push that turns J4 further down. Servo moves along every axis from `work` and `stand`, but it slows near them: in the simulation, a 1 s push delivered about 20 to 100% of the commanded motion. A push that pitches the tool down turns J4 toward its stop. From `work` or `stand`, Servo stops that push after about 0.2 to 0.3 rad of J4 travel, with the status `JOINT_BOUND`. This stop is the joint limit, not a fault. The real arm is not yet verified.
 
 ## Safety rules
 
 1. Support the arm before the first launch and before every release.
 2. Before the first launch, run `maker-arm-cli status --interface can0`. If it prints no `STATUS` line, run `maker-arm-cli --can can0 doctor`. Then check the calibration with no torque (step 6 of the real-arm section).
-3. Start at caps 0.5. Move to `home` at scaling 0.1 and compare the arm with RViz before any other motion.
+3. Start at caps 0.5. Run `go_home` first, right after enable. Then move to `home` at scaling 0.1 and compare the arm with RViz before any other motion.
 4. Do not release the arm while it is unsupported. Release only through `ros2 run maker_arm_bringup release`.
 5. Do not kill the daemon and do not cut power or CAN while the motors are on. The arm drops.
 6. Keep a person at the e-stop on the first real runs.
