@@ -3,7 +3,7 @@ from pathlib import Path
 
 from maker_arm_mujoco import robstride as rs
 from maker_arm_mujoco.model import (
-    build_model, description, grip_map, JOINTS, Plant, READY, ready, sim_profile
+    build_model, description, grip_map, JOINTS, Plant, READY, ready, sim_profile, start_pose
 )
 from maker_arm_mujoco.scene import load_scene, perturbed
 import mujoco
@@ -133,3 +133,17 @@ def test_the_plant_reports_j5_negated():
     assert abs(plant.data.qpos[joint5] + 0.3) < 0.05
     assert abs(plant.motor_q()[4] - 0.3) < 0.05
     assert plant.bank.motors[4].q == plant.motor_q()[4]  # the feedback the bank sends
+
+
+def test_the_start_poses_are_ready_and_the_real_arms_rest():
+    profile = sim_profile()
+    assert start_pose(profile, 'ready') == ready(profile)
+    rest = start_pose(profile, 'rest')
+    # The P0 scan of the owner's arm in the motor frame: J5 is negated, the jaw is closed.
+    assert np.allclose(np.degrees(rest), (-8.0, 0.0, 7.9, -24.5, -2.6, -3.2, -0.9))
+    plant = Plant(model_of_the_scene(), profile, rest)
+    q = {n: plant.data.qpos[plant.model.joint(n).qposadr[0]] for n in JOINTS}
+    assert q['link_006_joint'] == pytest.approx(math.radians(2.6))  # the URDF frame
+    assert 0.0 < q['gripper_left_joint'] < 0.001  # closed: under 1 mm per jaw
+    with pytest.raises(ValueError, match="'ready' or 'rest', not 'home'"):
+        start_pose(profile, 'home')

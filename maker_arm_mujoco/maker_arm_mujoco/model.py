@@ -30,6 +30,10 @@ JOINTS = (
 # The SRDF's ready, in the URDF frame: grasp_center at the lab's (0.2763, 0, 0.1607) with
 # link_006 at 0, and link_005 0.05 rad inside its MoveIt limit (the vendor wrist_flex stop).
 READY = (0.0, -1.5518, 1.6901, -1.038, 0.0, 0.0)
+# The owner's folded rest, the P0 scan in degrees after the full-turn correction, in the URDF
+# frame. J2 and the jaw rest outside the vendor limits, so enable pulls them in.
+REST_DEG = (-8.0, 0.0, 7.9, -24.5, 2.6, -3.2)
+REST_GRIPPER_DEG = -0.9  # motor 7: the jaw closed, 0.56 mm per jaw through the vendor map
 # The plant reports motor angles in the vendor convention: motor 5 turns against link_006_joint.
 # The daemon's vendor calibration (direction -1 on motor 5) turns it back.
 MOTOR_DIRECTION = (1, 1, 1, 1, -1, 1)
@@ -81,9 +85,10 @@ def description():
 
 def sim_profile():
     """
-    Return the profile that the daemon loads on vcan0 (sim.launch.py).
+    Return the plant's profile: the motor models, limits and gains of the nominal real profile.
 
-    Its calibration turns the plant's MOTOR_DIRECTION back into the URDF frame.
+    Its calibration turns the plant's MOTOR_DIRECTION back into the URDF frame. The daemon's
+    profile (sim.launch.py profile:=) can have other gains and caps, never another calibration.
     """
     path = _share('maker_arm_description') / 'config' / 'daemon' / 'real_profile_nominal.json'
     profile = json.loads(path.read_text())
@@ -108,6 +113,16 @@ def ready(profile):
     """Return the motor angles of the ready pose, with the jaws half open."""
     g = profile['joints'][6]
     return [*(d * q for d, q in zip(MOTOR_DIRECTION, READY)), (g['q_lo'] + g['q_hi']) / 2]
+
+
+def start_pose(profile, name):
+    """Return the motor angles of the start pose `name`: ready, or rest with the jaw closed."""
+    if name == 'ready':
+        return ready(profile)
+    if name == 'rest':
+        rest = (math.radians(q) for q in (*REST_DEG, REST_GRIPPER_DEG))
+        return [d * q for d, q in zip((*MOTOR_DIRECTION, 1), rest)]
+    raise ValueError(f"start must be 'ready' or 'rest', not {name!r}")
 
 
 def _quat(columns):

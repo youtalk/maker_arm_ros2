@@ -120,3 +120,15 @@ def test_sim_starts_the_plant_and_waits_for_plant_ready():
     assert len(plants) == 1 and plants[0].node_executable == "plant"
     handlers = [e.event_handler for e in entities if isinstance(e, RegisterEventHandler)]
     assert any(isinstance(h, OnProcessIO) for h in handlers)
+
+
+def test_sim_takes_the_profile_and_the_plant_start():
+    sim = load("sim")
+    entities = sim.generate_launch_description().entities
+    d = {e.name: "".join(t.text for t in e.default_value)
+         for e in entities if isinstance(e, DeclareLaunchArgument)}
+    assert d["profile"].endswith("config/daemon/real_profile_nominal.json")
+    assert d["start"] == "ready"
+    (plant,) = [e for e in entities if isinstance(e, Node) and e.node_package == "maker_arm_mujoco"]
+    names = {"".join(t.text for t in key) for p in plant._Node__parameters for key in p}
+    assert "start" in names
