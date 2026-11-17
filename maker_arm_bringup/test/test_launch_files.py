@@ -50,7 +50,8 @@ def real_ctx(**over):
     ctx = LaunchContext()
     ctx.launch_configurations.update(
         {"profile": "", "dynamics": "", "params": "", "gripper_map": "", "interface": "can0",
-         "residual": "", "rt": "false", "persist": "false", "rviz": "false", **over})
+         "residual": "", "rt": "false", "persist": "false", "rviz": "false",
+         "wrist_camera": "", "head_camera": "", **over})
     return ctx
 
 
@@ -102,7 +103,7 @@ def test_real_launch_passes_residual_and_rt_to_the_stack(tmp_path):
     ctx = LaunchContext()
     ctx.launch_configurations.update(
         {"interface": "can0", "residual": "/r.json", "rt": "true", "persist": "false",
-         "rviz": "false"})
+         "rviz": "false", "wrist_camera": "", "head_camera": ""})
     for k in real.FILES:
         (tmp_path / k).write_text("-0.03,0.01")
         ctx.launch_configurations[k] = str(tmp_path / k)
@@ -120,3 +121,24 @@ def test_sim_starts_the_plant_and_waits_for_plant_ready():
     assert len(plants) == 1 and plants[0].node_executable == "plant"
     handlers = [e.event_handler for e in entities if isinstance(e, RegisterEventHandler)]
     assert any(isinstance(h, OnProcessIO) for h in handlers)
+
+
+def test_real_launch_starts_one_camera_per_device_argument():
+    real = load("real")
+    declared = [e.name for e in real.generate_launch_description().entities
+                if isinstance(e, DeclareLaunchArgument)]
+    assert {"wrist_camera", "head_camera"} <= set(declared)
+    assert real.camera_nodes(real_ctx()) == []
+    nodes = real.camera_nodes(real_ctx(wrist_camera="/dev/w", head_camera="/dev/h"))
+    assert [n.node_package for n in nodes] == ["v4l2_camera", "v4l2_camera"]
+    assert [n._Node__node_namespace for n in nodes] == ["wrist_camera", "head_camera"]
+    (one,) = real.camera_nodes(real_ctx(head_camera="/dev/h"))
+    assert one._Node__node_namespace == "head_camera"
+
+
+def test_torque_off_launch_never_starts_the_daemon():
+    entities = load("torque_off").generate_launch_description().entities
+    nodes = [e for e in entities if isinstance(e, Node)]
+    assert {n.node_executable for n in nodes} == {"robot_state_publisher", "rviz2", "torque_off_view"}
+    declared = {e.name for e in entities if isinstance(e, DeclareLaunchArgument)}
+    assert {"interface", "profile", "gripper_map"} <= declared

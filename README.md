@@ -24,7 +24,7 @@ These steps are for Ubuntu 24.04 with ROS 2 Jazzy.
     ```sh
     sudo apt install rustc-1.85 cargo-1.85 git
     git clone https://github.com/youtalk/maker-arm-rs
-    git -C maker-arm-rs checkout 3cf672aaa5f01d83dde6154fd42ef50ab6747772
+    git -C maker-arm-rs checkout 71e31d8874c0a6dc280fb1954761d91be28008c3
     PATH=/usr/lib/rust-1.85/bin:$PATH cargo install --locked --path maker-arm-rs/crates/maker-arm-cli
     ```
 
@@ -162,6 +162,14 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
 
     J2 and J3 read near 0, and the closed gripper reads near 0. If they do not, the arm is not in the vendor zero. Stop, and do not launch. Then move one joint at a time by hand, and run `scan` again after each move. Only the value of that joint changes.
 
+    To see the joints live, run the torque-off view. It starts RViz and shows the joint states at 5 Hz. It only reads the motors and never enables one. It does not start the daemon, so run it before step 7 and stop it with Ctrl-C.
+
+    ```sh
+    ros2 launch maker_arm_bringup torque_off.launch.py
+    ```
+
+    Move each joint by hand. If RViz moves the joint the other way, the direction is wrong. If the pose does not match the arm, the offset is wrong. The jaw follows the gripper map. Add `profile:=<file>` for another profile. Add `gripper_map:=<file>` for a file with one line `a,b`. Without it, the CLI default map applies.
+
 7. Launch the stack. Without `profile:=`, it loads the shipped caps 0.5 profile. For an arm with another zero, add `profile:=$HOME/maker_arm/real_profile.json`.
 
     ```sh
@@ -199,6 +207,18 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
 
 If you stop the launch with Ctrl-C, the daemon keeps holding the arm. To turn the motors off, run the release step.
 
+## Cameras
+
+`real.launch.py` starts a `v4l2_camera` node for each camera argument that is not empty. Each camera is 640 x 480 at 30 fps and publishes compressed images. Use the `/dev/v4l/by-id/` path, because the `/dev/videoN` numbers change between boots.
+
+```sh
+ros2 launch maker_arm_bringup real.launch.py \
+    wrist_camera:=/dev/v4l/by-id/usb-Sonix_Technology_Co.__Ltd._KD-USB_Cameras_KD-USB_Cameras-video-index0 \
+    head_camera:=/dev/v4l/by-id/usb-Remo_Tech_Co.__Ltd._OBSBOT_Meet_2-video-index0
+```
+
+The wrist camera publishes `/wrist_camera/image_raw/compressed`, the same topic as the simulation. The head camera publishes `/head_camera/image_raw/compressed`. The head camera is a fixed view of the arm and the desk. Turn off its AI framing, so the image never zooms.
+
 ## Conduit
 
 Use these values to connect Conduit.
@@ -212,7 +232,8 @@ Use these values to connect Conduit.
 | Gripper joint | `gripper_left_joint` |
 | Gripper open | 0.0405171 m per jaw |
 | Gripper closed | 0.0030216 m per jaw |
-| Wrist camera (simulation only) | `/wrist_camera/image_raw/compressed` |
+| Wrist camera | `/wrist_camera/image_raw/compressed` |
+| Head camera (real arm only) | `/head_camera/image_raw/compressed` |
 
 The open and closed values come from the vendor's gripper preview map. Measure them on your arm before you rely on them.
 

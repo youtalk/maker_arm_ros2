@@ -1,6 +1,6 @@
 # Daemon model files
 
-The profiles and `dynamics_urdf.json` come from `maker-arm-cli export` of maker-arm-rs at commit `3cf672aaa5f01d83dde6154fd42ef50ab6747772`. Run these commands in the root of this repository:
+The profiles and `dynamics_urdf.json` come from `maker-arm-cli export` of maker-arm-rs at commit `71e31d8874c0a6dc280fb1954761d91be28008c3`. Run these commands in the root of this repository:
 
     maker-arm-cli export --sim --urdf maker_arm_description/urdf/maker_arm_sdk.urdf --out_dir maker_arm_description/config/daemon
     maker-arm-cli export --calibration maker_arm_description/config/daemon/vendor_calibration.json --caps 0.5 --out maker_arm_description/config/daemon/real_profile_caps05.json
