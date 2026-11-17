@@ -17,13 +17,12 @@
     </group>
     <!--GROUP STATES: Purpose: Define a named state for a particular group, in terms of joint values. This is useful to define states like 'folded arms'-->
     <!-- work and stand are the states MoveIt Servo drives from, and they come first because
-         Conduit shows the arm's states in SRDF order. Servo halts at ready and home: the
-         Jacobian condition number at grasp_center is 35.2 and 42.2 there, above Servo's
-         hard_stop_singularity_threshold of 30. It is 25.4 at work and 21.7 at stand, so Servo
-         moves along every axis but decelerates (lower_singularity_threshold is 17). stand keeps
-         link_005 0.2 rad off Servo's joint bound, so +z and +pitch do not stop on it, and its
-         link_006 is 0, so the gripper stays in the arm's plane. work keeps link_006 at -0.1:
-         at 0, Servo halted for a singularity on -x. -->
+         Conduit shows the arm's states in SRDF order. The Jacobian condition number at
+         grasp_center is 25.4 at work and 22.4 at stand, between Servo's
+         lower_singularity_threshold (17) and its hard_stop_singularity_threshold (30), so Servo
+         moves along every axis but decelerates. Both keep every joint 0.2 rad off Servo's joint
+         bound (test_srdf.py). stand has link_006 at 0, so the gripper stays in the arm's plane.
+         work keeps link_006 at -0.1: at 0, Servo halted for a singularity on -x. -->
     <group_state name="work" group="arm">
         <joint name="link_002_joint" value="0"/>
         <joint name="link_003_joint" value="-0.95"/>
@@ -36,26 +35,30 @@
         <joint name="link_002_joint" value="0"/>
         <joint name="link_003_joint" value="-1.6"/>
         <joint name="link_004_joint" value="1.6"/>
-        <joint name="link_005_joint" value="-1.25"/>
+        <joint name="link_005_joint" value="-0.78"/>
         <joint name="link_006_joint" value="0"/>
         <joint name="link_007_joint" value="0"/>
     </group_state>
-    <!-- ready is the lab's home pose (robots/frames.py HOME_JOINT_POS) with link_006 at 0
-         instead of -0.22, so the gripper stays in the arm's plane and the pose is left-right
-         symmetric: grasp_center sits at (0.2763, 0, 0.1607). -->
+    <!-- ready keeps the lab's grasp_center position (0.2763, 0, 0.1607) with link_006 at 0,
+         so the gripper stays in the arm's plane. The vendor wrist_flex stop keeps the tool
+         28.5 deg off vertical: link_005 sits 0.05 rad inside its MoveIt limit. The condition
+         number is 23.8, but link_005 sits inside Servo's joint margin, so Servo stops a push
+         that turns it further down. -->
     <group_state name="ready" group="arm">
         <joint name="link_002_joint" value="0"/>
-        <joint name="link_003_joint" value="-1.79"/>
-        <joint name="link_004_joint" value="2.05"/>
-        <joint name="link_005_joint" value="-1.3"/>
+        <joint name="link_003_joint" value="-1.5518"/>
+        <joint name="link_004_joint" value="1.6901"/>
+        <joint name="link_005_joint" value="-1.038"/>
         <joint name="link_006_joint" value="0"/>
         <joint name="link_007_joint" value="0"/>
     </group_state>
-    <!-- INITIAL: task 17 replaces home with the measured rest pose. -->
+    <!-- home is the vendor zero (folded against the base) pulled 0.05 rad inside the MoveIt
+         limits. It is the rest pose before a release. The condition number is 41.0, so Servo
+         halts here. -->
     <group_state name="home" group="arm">
         <joint name="link_002_joint" value="0"/>
-        <joint name="link_003_joint" value="-0.1"/>
-        <joint name="link_004_joint" value="0.1"/>
+        <joint name="link_003_joint" value="-0.1558505"/>
+        <joint name="link_004_joint" value="0.1488692"/>
         <joint name="link_005_joint" value="0"/>
         <joint name="link_006_joint" value="0"/>
         <joint name="link_007_joint" value="0"/>
@@ -63,10 +66,10 @@
     <!-- open and closed sit 0.5 mm inside the jaw limits of joint_limits.yaml. An empty close
          lands a few um past its target, and MoveIt refuses to plan from outside the limits. -->
     <group_state name="open" group="gripper">
-        <joint name="gripper_left_joint" value="0.050636"/>
+        <joint name="gripper_left_joint" value="0.0405171"/>
     </group_state>
     <group_state name="closed" group="gripper">
-        <joint name="gripper_left_joint" value="0.0017765"/>
+        <joint name="gripper_left_joint" value="0.0030216"/>
     </group_state>
     <!--END EFFECTOR: Purpose: Represent information about an end effector.-->
     <end_effector name="gripper" parent_link="link_007" group="gripper" parent_group="arm"/>

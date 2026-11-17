@@ -18,4 +18,6 @@ Parameters: `interface` (`vcan0`), `scene` (`config/scene.yaml`), `seed` (0, the
 
 Topics: `/wrist_camera/image_raw/compressed`, `/wrist_camera/camera_info`, and the TF frames `object/<name>` in `mount_link`. The plant renders with EGL unless `MUJOCO_GL` names another backend.
 
+The plant reports motor angles in the vendor convention: motor 5 turns against `link_006_joint`. So the daemon on `vcan0` loads the vendor calibration, as on the real arm.
+
 Until the daemon first enables a motor, the plant holds the arm at the ready pose, as a user supports the real arm. Every 10 s it logs how many physics steps started more than 2 ms late.

@@ -27,7 +27,8 @@ def generate_launch_description():
             os.path.join(share("maker_arm_bringup"), "launch", "stack.launch.py")),
         launch_arguments={
             "interface": "vcan0",
-            "profile": os.path.join(DAEMON, "sim_profile.json"),
+            # The plant reports motor 5 negated, as the real arm does.
+            "profile": os.path.join(DAEMON, "real_profile_nominal.json"),
             "dynamics": os.path.join(DAEMON, "dynamics_urdf.json"),
             "persist": LaunchConfiguration("persist"),
             "rviz": LaunchConfiguration("rviz"),

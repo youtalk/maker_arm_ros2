@@ -3,11 +3,12 @@ from pathlib import Path
 
 from maker_arm_mujoco import robstride as rs
 from maker_arm_mujoco.model import (
-    build_model, description, JOINTS, Plant, READY, ready, sim_profile
+    build_model, description, grip_map, JOINTS, Plant, READY, ready, sim_profile
 )
 from maker_arm_mujoco.scene import load_scene, perturbed
 import mujoco
 import numpy as np
+import pytest
 
 SCENE = Path(__file__).resolve().parents[1] / 'config' / 'scene.yaml'
 ENABLE = bytes.fromhex('FFFFFFFFFFFFFFFC')
@@ -69,15 +70,20 @@ def test_the_model_compiles_with_the_seven_driven_joints_and_the_camera():
         assert not {model.geom_bodyid[c.geom1], model.geom_bodyid[c.geom2]} <= robot
 
 
+def hold(plant, profile, target, steps):
+    """Enable the seven motors, send each one MIT frame at target, then step the plant."""
+    for i, j in enumerate(profile['joints']):
+        plant.bank.handle(i + 1, ENABLE, 0.0)
+        plant.bank.handle(*mit_frame(i + 1, target[i], j['kp'], j['kd'], j['model']), 0.0)
+    for k in range(steps):
+        plant.step(k * 0.001)
+
+
 def test_the_mit_hold_keeps_the_ready_pose_under_gravity():
     profile = sim_profile()
     target = ready(profile)  # the jaws half open
     plant = Plant(model_of_the_scene(), profile, target)
-    for i, j in enumerate(profile['joints']):
-        plant.bank.handle(i + 1, ENABLE, 0.0)
-        plant.bank.handle(*mit_frame(i + 1, target[i], j['kp'], j['kd'], j['model']), 0.0)
-    for k in range(2000):
-        plant.step(k * 0.001)
+    hold(plant, profile, target, 2000)
     assert not plant.held  # the motors held the arm, not the start-pose support
     err = np.abs(plant.motor_q() - target)
     print('worst joint error', err.max(), 'rad, per joint', err.round(4))
@@ -102,3 +108,28 @@ def test_perturbed_is_seeded_and_bounded():
             assert {k: v for k, v in p.items() if k not in ('pos', 'yaw')} == {
                 k: v for k, v in o.items() if k not in ('pos', 'yaw')
             }
+
+
+def test_grip_map_equals_the_daemons_provisional_map():
+    a, b = grip_map()
+
+    def jaw(angle):  # maker-arm-rs GripMap::to_joint_m: one jaw is half the gap
+        return (a * angle + b) / 2
+
+    # The values of maker-arm-rs's the_provisional_grip_map_is_the_vendor_preview test.
+    assert abs(jaw(0.006713)) < 1e-12
+    assert abs(jaw(-2.078984) - 0.0524125) < 1e-12
+    assert abs(jaw(math.radians(-96.0)) - 0.042274) < 1e-5
+
+
+def test_the_plant_reports_j5_negated():
+    profile = sim_profile()
+    target = ready(profile)
+    target[4] = 0.3  # motor 5
+    plant = Plant(model_of_the_scene(), profile, target)
+    joint5 = plant.model.joint('link_006_joint').qposadr[0]
+    assert plant.data.qpos[joint5] == pytest.approx(-0.3)
+    hold(plant, profile, target, 500)  # a wrong torque sign drives joint 5 away
+    assert abs(plant.data.qpos[joint5] + 0.3) < 0.05
+    assert abs(plant.motor_q()[4] - 0.3) < 0.05
+    assert plant.bank.motors[4].q == plant.motor_q()[4]  # the feedback the bank sends

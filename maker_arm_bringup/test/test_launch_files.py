@@ -61,6 +61,7 @@ def test_real_launch_without_a_profile_gives_the_export_command():
     msg = str(e.value)
     assert "maker-arm-cli export --calibration CAL.json --caps 0.5 --out <path>" in msg
     assert "profile:=<path>" in msg
+    assert "real_profile_caps05.json" in msg  # the default for an arm in the vendor zero
 
 
 def test_real_launch_stops_for_a_given_file_that_does_not_exist(tmp_path):
@@ -71,12 +72,13 @@ def test_real_launch_stops_for_a_given_file_that_does_not_exist(tmp_path):
         real.launch_setup(real_ctx(profile=str(profile), params="/nonexistent/params.json"))
 
 
-def test_real_launch_defaults_are_the_shipped_dynamics_and_no_params():
+def test_real_launch_defaults_are_the_shipped_caps05_profile_and_dynamics_and_no_params():
     real = load("real")
     d = {e.name: e.default_value for e in real.generate_launch_description().entities
          if isinstance(e, DeclareLaunchArgument)}
+    assert "".join(t.text for t in d["profile"]).endswith("config/daemon/real_profile_caps05.json")
     assert "".join(t.text for t in d["dynamics"]).endswith("dynamics_urdf.json")
-    assert all("".join(t.text for t in d[k]) == "" for k in ("profile", "params", "gripper_map", "residual"))
+    assert all("".join(t.text for t in d[k]) == "" for k in ("params", "gripper_map", "residual"))
     assert "".join(t.text for t in d["interface"]) == "can0"
 
 

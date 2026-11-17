@@ -27,9 +27,12 @@ JOINTS = (
     'link_007_joint',
     'gripper_left_joint',
 )
-# The lab's home (robots/frames.py HOME_JOINT_POS) with link_006 levelled from -0.22 to 0,
-# so the gripper stays in the arm's plane.
-READY = (0.0, -1.79, 2.05, -1.3, 0.0, 0.0)
+# The SRDF's ready, in the URDF frame: grasp_center at the lab's (0.2763, 0, 0.1607) with
+# link_006 at 0, and link_005 0.05 rad inside its MoveIt limit (the vendor wrist_flex stop).
+READY = (0.0, -1.5518, 1.6901, -1.038, 0.0, 0.0)
+# The plant reports motor angles in the vendor convention: motor 5 turns against link_006_joint.
+# The daemon's vendor calibration (direction -1 on motor 5) turns it back.
+MOTOR_DIRECTION = (1, 1, 1, 1, -1, 1)
 
 PHYSICS_DT = 0.001  # lab mj/bench.py PHYSICS_DT
 # Per motor, in the motor frame. Motor 7's values reach the jaw through the gripper map.
@@ -46,6 +49,9 @@ DESK_HALF_THICKNESS = 0.02  # lab core/layout.py DESK_SIZE: a 40 mm desk
 NEAR_CLIP_M = 0.005  # wrist camera near clip; the jaws pass within about 10 mm of the lens
 OBSTACLE_RGBA = (0.55, 0.55, 0.55, 1.0)  # lab mj/scene.py, the bin walls
 JAW_TRAVEL_M = 0.0524125  # the URDF's jaw limit, lab assets/urdf_prep.py gripper_travel()
+# maker-arm-rs GripMap::provisional, the vendor's preview: the jaw is closed at GRIP_CLOSED_RAD
+# and fully open (JAW_TRAVEL_M per jaw) at GRIP_OPEN_RAD.
+GRIP_CLOSED_RAD, GRIP_OPEN_RAD = 0.006713, -2.078984
 # Lab robots/frames.py WRIST_CAM_POS_IN_WRIST and WRIST_CAM_ROT_IN_WRIST: 30 mm off the tool
 # axis, 5 mm in front of the motor face, pitched 30 deg back toward grasp_center. The image is
 # turned half a turn about the optical axis from the lab's (see build_model).
@@ -74,31 +80,34 @@ def description():
 
 
 def sim_profile():
-    """Return the profile that the daemon loads on vcan0. The plant needs its identity map."""
-    path = _share('maker_arm_description') / 'config' / 'daemon' / 'sim_profile.json'
+    """
+    Return the profile that the daemon loads on vcan0 (sim.launch.py).
+
+    Its calibration turns the plant's MOTOR_DIRECTION back into the URDF frame.
+    """
+    path = _share('maker_arm_description') / 'config' / 'daemon' / 'real_profile_nominal.json'
     profile = json.loads(path.read_text())
-    for j in profile['joints']:
-        if (j['direction'], j['offset']) != (1.0, 0.0):
-            raise ValueError(f'{path}: joint {j["name"]} is not the identity motor map')
+    for j, d in zip(profile['joints'], (*MOTOR_DIRECTION, 1)):
+        if (j['direction'], j['offset']) != (d, 0.0):
+            raise ValueError(f'{path}: joint {j["name"]} is not the vendor motor map')
     return profile
 
 
-def grip_map(profile):
+def grip_map():
     """
     Return (a, b) of maker-arm-rs GripMap::provisional, jaw gap = a * angle + b.
 
-    The gap is 0 at the gripper's q_lo and 2 * JAW_TRAVEL_M at its q_hi. One jaw moves half the
-    gap, so the jaw joint has joint_m_per_rad = a / 2.
+    The gap is 0 at GRIP_CLOSED_RAD and 2 * JAW_TRAVEL_M at GRIP_OPEN_RAD. One jaw moves half
+    the gap, so the jaw joint has joint_m_per_rad = a / 2.
     """
-    g = profile['joints'][6]
-    a = 2 * JAW_TRAVEL_M / (g['q_hi'] - g['q_lo'])
-    return a, -a * g['q_lo']
+    a = 2 * JAW_TRAVEL_M / (GRIP_OPEN_RAD - GRIP_CLOSED_RAD)
+    return a, -a * GRIP_CLOSED_RAD
 
 
 def ready(profile):
     """Return the motor angles of the ready pose, with the jaws half open."""
     g = profile['joints'][6]
-    return [*READY, (g['q_lo'] + g['q_hi']) / 2]
+    return [*(d * q for d, q in zip(MOTOR_DIRECTION, READY)), (g['q_lo'] + g['q_hi']) / 2]
 
 
 def _quat(columns):
@@ -112,7 +121,7 @@ def build_model(urdf_text: str, mesh_dir: Path, scene: dict) -> mujoco.MjModel:
     Build the arm, the desk, the scene's objects and its obstacle as one model.
 
     The mount, the jaw slide joints and the importer's mimic equality come from the URDF. The
-    motor models and the gripper map come from sim_profile().
+    motor models come from sim_profile(), the gripper map from grip_map().
     """
     # Lab mj/scene.py _urdf_with_compiler: the importer reads the mesh options from this block.
     compiler = (
@@ -131,7 +140,7 @@ def build_model(urdf_text: str, mesh_dir: Path, scene: dict) -> mujoco.MjModel:
             geom.contype, geom.conaffinity = 1, 2
             geom.solref = list(CONTACT_SOLREF)
     profile = sim_profile()
-    rad_per_m = 2 / grip_map(profile)[0]  # motor 7 per metre of jaw travel: 1 / joint_m_per_rad
+    rad_per_m = abs(2 / grip_map()[0])  # motor 7 per metre of jaw travel: 1 / joint_m_per_rad
     for name, j in zip(JOINTS, profile['joints']):
         s = rad_per_m if name == 'gripper_left_joint' else 1.0
         joint = spec.joint(name)
@@ -234,8 +243,8 @@ class Plant:
         self.model, self.data = model, mujoco.MjData(model)
         self.bank = MotorBank(
             [j['model'] for j in profile['joints']], params_supported=params_supported)
-        a, b = grip_map(profile)
-        self.scale = np.array([1.0] * 6 + [2 / a])  # motor units per joint unit
+        a, b = grip_map()
+        self.scale = np.array([*MOTOR_DIRECTION, 2 / a], float)  # motor units per joint unit
         self.shift = np.array([0.0] * 6 + [-b / a])
         self.qadr = [model.joint(n).qposadr[0] for n in JOINTS]
         self.dadr = [model.joint(n).dofadr[0] for n in JOINTS]
