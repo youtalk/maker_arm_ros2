@@ -92,6 +92,7 @@ def generate_launch_description():
         Node(package="moveit_servo", executable="servo_node", name="servo_node", output="screen",
              parameters=servo_params),
         Node(package="rviz2", executable="rviz2", arguments=["-d", rviz_cfg],
+             respawn=True, respawn_delay=2.0,
              parameters=[description, moveit["robot_description_semantic"],
                          moveit["robot_description_kinematics"]],
              condition=IfCondition(cfg["rviz"])),
