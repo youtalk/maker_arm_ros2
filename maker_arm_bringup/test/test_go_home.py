@@ -1,6 +1,7 @@
 import importlib.machinery
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -60,3 +61,61 @@ def test_go_home_moves_only_from_near_home():
         go_home.check_start(home, dict(zip(ARM, work)))
     with pytest.raises(RuntimeError, match="link_007_joint is nan"):  # a joint state is missing
         go_home.check_start(home, dict(zip(ARM[:5], rest)))
+
+
+def test_go_home_checks_that_the_arm_arrived():
+    go_home = load()
+    home = {"link_002_joint": 0.0, "link_003_joint": -0.1}
+    closed = {"gripper_left_joint": 0.003}
+    near = {"link_002_joint": 0.019, "link_003_joint": -0.1, "gripper_left_joint": 0.0034}
+    go_home.check_arrival(home, closed, near)
+    with pytest.raises(RuntimeError, match=r"link_003_joint stopped 0\.0210 rad .*limit 0\.02 rad"):
+        go_home.check_arrival(home, closed, {**near, "link_003_joint": -0.121})
+    with pytest.raises(RuntimeError, match=r"gripper_left_joint stopped 0\.0006 m .*limit 0\.0005 m"):
+        go_home.check_arrival(home, closed, {**near, "gripper_left_joint": 0.0036})
+    with pytest.raises(RuntimeError, match="gripper_left_joint stopped nan"):
+        go_home.check_arrival(home, closed, {"link_002_joint": 0.0, "link_003_joint": -0.1})
+
+
+class FakeGoal:
+    """The goal handle of an accepted goal. Its futures are names that the fake wait answers."""
+
+    accepted = True
+    cancelled = False
+
+    def get_result_async(self):
+        return "result"
+
+    def cancel_goal_async(self):
+        self.cancelled = True
+        return "cancel"
+
+
+@pytest.mark.parametrize("stop", [KeyboardInterrupt(), RuntimeError("no result in 15.0 s")])
+def test_ctrl_c_or_a_timeout_during_the_move_cancels_the_goal(monkeypatch, capsys, stop):
+    go_home = load()
+    goal = FakeGoal()
+
+    class Client:
+        def __init__(self, node, action, name):
+            pass
+
+        def wait_for_server(self, timeout_sec):
+            return True
+
+        def send_goal_async(self, g):
+            return "sent"
+
+    def wait(node, future, timeout, what):
+        if future == "result":
+            raise stop
+        if future == "cancel":
+            return SimpleNamespace(goals_canceling=[object()], return_code=0)
+        return goal
+
+    monkeypatch.setattr(go_home, "ActionClient", Client)
+    monkeypatch.setattr(go_home, "wait", wait)
+    with pytest.raises(type(stop)):
+        go_home.send(None, None, "/arm", None, lambda r: True)
+    assert goal.cancelled
+    assert "cancelled the /arm goal" in capsys.readouterr().err
