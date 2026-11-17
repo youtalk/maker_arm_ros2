@@ -40,7 +40,9 @@ MODELS = {'RS00': Model(14.0, 33.0), 'RS02': Model(17.0, 44.0)}
 
 
 def float_to_uint(x, lo, hi, bits):
-    """Clamp and scale to 0..2^bits-1. Python's round is half to even, like the Rust codec."""
+    """Clamp and scale to 0..2^bits-1, half to even like the Rust codec. NaN gives 0."""
+    if x != x:
+        return 0
     return round((min(max(x, lo), hi) - lo) * ((1 << bits) - 1) / (hi - lo))
 
 
@@ -78,7 +80,7 @@ def encode_feedback(motor_id, pos, vel, tau, temp_c, mode, fault, warning, legac
     q = float_to_uint(pos, P_MIN, P_MAX, 16)
     v = float_to_uint(vel, m.v_min, m.v_max, 12)
     t = float_to_uint(tau, m.t_min, m.t_max, 12)
-    temp = min(max(round(temp_c * 10.0), 0), 0xFFF)
+    temp = float_to_uint(temp_c * 10.0, 0.0, 4095.0, 12)
     status = 0 if legacy else mode << 6 | fault << 5 | warning << 4
     return bytes([
         motor_id, q >> 8, q & 0xFF, v >> 4, (v & 0xF) << 4 | t >> 8, t & 0xFF,

@@ -1,3 +1,5 @@
+import math
+
 from maker_arm_mujoco import robstride as rs
 
 import pytest
@@ -97,3 +99,16 @@ def test_param_replies_ride_the_read_and_write_ids():
     assert rs.encode_param_reply(7, rs.CAN_TIMEOUT, raw, False) == (
         0x307, bytes.fromhex('2870000010270000'))
     assert rs.encode_param_reply(7, rs.CAN_TIMEOUT, raw, True)[0] == 0x407
+
+
+def test_non_finite_input_is_pinned_not_raised():
+    # A diverged physics state must not kill the node: NaN gives 0, infinities clamp.
+    f = rs.float_to_uint
+    assert f(math.nan, rs.P_MIN, rs.P_MAX, 16) == 0
+    assert f(math.inf, rs.P_MIN, rs.P_MAX, 16) == 65535
+    assert f(-math.inf, rs.P_MIN, rs.P_MAX, 16) == 0
+    nan, inf = math.nan, math.inf
+    got = rs.encode_feedback(1, nan, nan, nan, nan, 0, False, False, legacy=True)
+    assert got == bytes.fromhex('0100000000000000')
+    got = rs.encode_feedback(1, inf, -inf, inf, inf, 0, False, False, legacy=True)
+    assert got == bytes.fromhex('01FFFF000FFF0FFF')
