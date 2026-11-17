@@ -171,10 +171,16 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
    If the launch stops with a message that names a file that does not exist, stop. Fix the path. Never mix a dynamics file and a params file of different identifications.
 8. If the launch says that no daemon answered, read the log that the message names. To find the process that holds the CAN bus, run `ss -xlp | grep maker-arm-bus-can0`. A daemon can hold the arm with no socket. Support the arm before you stop that process, because the arm then drops.
 9. Enabling the motors holds the measured pose. The daemon also enables a joint that rests up to 0.35 rad outside its soft limits. It then pulls that joint back inside the limits, so that joint can move by up to 0.35 rad. In the folded rest, J2 and J3 sit just outside their limits, so they move a few degrees. Keep the arm supported until the launch finishes.
-10. In RViz, open the MotionPlanning panel. Set the velocity and acceleration scaling to 0.1. Plan and execute the named pose `home`. It is the folded rest, pulled inside the limits.
-11. Compare the real arm with RViz. If they differ, stop. Support the arm and release it. A bad zero or a wrong joint map causes this.
-12. Only after the arm matches RViz, try other moves. The default scaling is 0.2.
-13. Use nominal caps only after the arm matches RViz and finishes the moves of steps 10 and 12 at caps 0.5.
+10. Bring the arm into MoveIt's planning range. After enable, J2, J3 and the jaw rest just outside that range, and MoveIt refuses to plan from there. This command moves the arm to `home` in 5 s and closes the jaw, through the controllers and not through MoveIt. It checks no collisions, so run it only from the folded rest, right after enable.
+
+    ```sh
+    ros2 run maker_arm_bringup go_home
+    ```
+
+11. In RViz, open the MotionPlanning panel. Set the velocity and acceleration scaling to 0.1. Plan and execute the named pose `home`. It is the folded rest, pulled inside the limits.
+12. Compare the real arm with RViz. If they differ, stop. Support the arm and release it. A bad zero or a wrong joint map causes this.
+13. Only after the arm matches RViz, try other moves. The default scaling is 0.2.
+14. Use nominal caps only after the arm matches RViz and finishes the moves of steps 11 and 13 at caps 0.5.
 
     ```sh
     ros2 launch maker_arm_bringup real.launch.py rviz:=true \
@@ -183,7 +189,7 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
 
     For an arm with another zero, export a second file with `--caps 1.0`, so the caps 0.5 profile stays.
 
-14. At the end of the session, support the arm. Then release it.
+15. At the end of the session, support the arm. Then release it.
 
     ```sh
     ros2 run maker_arm_bringup release
@@ -209,6 +215,8 @@ Use these values to connect Conduit.
 | Wrist camera (simulation only) | `/wrist_camera/image_raw/compressed` |
 
 The open and closed values come from the vendor's gripper preview map. Measure them on your arm before you rely on them.
+
+On the real arm, run `ros2 run maker_arm_bringup go_home` once after the launch, before you use Conduit's poses. Conduit's poses go through MoveIt, and MoveIt cannot plan from the rest pose after enable.
 
 Before you teleoperate, move to `work` or `stand`. Servo halts at `home`, because `home` is a singularity. At `ready`, J4 sits near its limit, so Servo stops a push that turns J4 further down. Servo moves along every axis from `work` and `stand`, but it slows near them: in the simulation, a 1 s push delivered about 20 to 100% of the commanded motion. The real arm is not yet verified.
 
@@ -237,7 +245,7 @@ What the stack does for you:
 - `maker_arm_description`: URDF, meshes and the daemon model files.
 - `maker_arm_hardware`: the ros2_control plugin.
 - `maker_arm_moveit_config`: MoveIt and Servo configuration.
-- `maker_arm_bringup`: launch files, controllers, RViz and the release command.
+- `maker_arm_bringup`: launch files, controllers, RViz, and the release and go_home commands.
 - `maker_arm_mujoco`: the MuJoCo plant.
 - `maker_arm_demos`: pick and place, replay and test tools.
 

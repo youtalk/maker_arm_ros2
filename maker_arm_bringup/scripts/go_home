@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""Move the arm to the SRDF's `home` and the jaw to `closed`, straight through the controllers.
+
+    ros2 run maker_arm_bringup go_home
+
+After enable on an arm in the vendor zero, J2, J3 and the jaw rest just outside MoveIt's
+planning range, and MoveIt refuses to plan from there. This sends one FollowJointTrajectory
+goal that reaches `home` in DURATION_S and one GripperCommand goal at `closed`. It reads both
+states from move_group's robot_description_semantic parameter. It does not go through MoveIt,
+so it checks no collisions: run it from the folded rest, right after enable.
+
+It exits 1 with a message when a goal is rejected or fails.
+"""
+
+import sys
+import xml.etree.ElementTree as ET
+
+import rclpy
+from action_msgs.msg import GoalStatus
+from control_msgs.action import FollowJointTrajectory, GripperCommand
+from rcl_interfaces.msg import ParameterType
+from rcl_interfaces.srv import GetParameters
+from rclpy.action import ActionClient
+from trajectory_msgs.msg import JointTrajectoryPoint
+
+ARM_ACTION = "/arm_controller/follow_joint_trajectory"
+GRIPPER_ACTION = "/gripper_controller/gripper_cmd"
+DURATION_S = 5  # a slow move: the arm starts at most a few degrees from home
+WAIT_S = 10.0  # for move_group's parameter, each action server and each goal reply
+
+
+def state(srdf, group, name):
+    """Return {joint: value} of the SRDF's group_state `name` of `group`, in SRDF order."""
+    for s in ET.fromstring(srdf).findall("group_state"):
+        if (s.get("group"), s.get("name")) == (group, name):
+            return {j.get("name"): float(j.get("value")) for j in s.findall("joint")}
+    raise ValueError(f"the SRDF has no {group} state {name}")
+
+
+def goals(srdf):
+    """Return the arm goal at `home` and the gripper goal at `closed`."""
+    home = state(srdf, "arm", "home")
+    arm = FollowJointTrajectory.Goal()
+    arm.trajectory.joint_names = list(home)
+    point = JointTrajectoryPoint(positions=list(home.values()))
+    point.time_from_start.sec = DURATION_S
+    arm.trajectory.points = [point]
+    hand = GripperCommand.Goal()
+    hand.command.position = state(srdf, "gripper", "closed")["gripper_left_joint"]
+    return arm, hand
+
+
+def wait(node, future, timeout, what):
+    rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
+    if not future.done():
+        raise RuntimeError(f"no {what} in {timeout} s")
+    return future.result()
+
+
+def semantic(node):
+    """Return move_group's robot_description_semantic parameter."""
+    client = node.create_client(GetParameters, "/move_group/get_parameters")
+    if not client.wait_for_service(timeout_sec=WAIT_S):
+        raise RuntimeError(f"no move_group parameter service in {WAIT_S} s")
+    request = GetParameters.Request(names=["robot_description_semantic"])
+    (value,) = wait(node, client.call_async(request), WAIT_S, "move_group parameter reply").values
+    if value.type != ParameterType.PARAMETER_STRING:
+        raise RuntimeError("move_group has no robot_description_semantic parameter")
+    return value.string_value
+
+
+def send(node, action, name, goal, ok):
+    """Send goal to the action server `name`. Raise unless it succeeds and ok(result) holds."""
+    client = ActionClient(node, action, name)
+    if not client.wait_for_server(timeout_sec=WAIT_S):
+        raise RuntimeError(f"no {name} action server in {WAIT_S} s")
+    handle = wait(node, client.send_goal_async(goal), WAIT_S, f"{name} goal reply")
+    if not handle.accepted:
+        raise RuntimeError(f"{name} rejected the goal")
+    res = wait(node, handle.get_result_async(), DURATION_S + WAIT_S, f"{name} result")
+    if res.status != GoalStatus.STATUS_SUCCEEDED or not ok(res.result):
+        raise RuntimeError(f"{name} failed: status {res.status}, {res.result}")
+
+
+def main():
+    rclpy.init()
+    node = rclpy.create_node("go_home")
+    try:
+        arm, hand = goals(semantic(node))
+        send(node, FollowJointTrajectory, ARM_ACTION, arm,
+             lambda r: r.error_code == FollowJointTrajectory.Result.SUCCESSFUL)
+        send(node, GripperCommand, GRIPPER_ACTION, hand, lambda r: r.reached_goal)
+    except (RuntimeError, ValueError) as e:
+        print(f"go_home: {e}", file=sys.stderr)
+        return 1
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+    print("go_home: the arm is at home and the jaw is closed")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
