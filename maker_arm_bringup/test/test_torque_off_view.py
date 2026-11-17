@@ -22,14 +22,16 @@ def test_watch_line_becomes_a_joint_state():
     assert list(msg.position) == [0.1, -0.2, 0.3, -0.4, 0.5, -0.6, 0.02]
 
 
-@pytest.mark.parametrize("line", [
-    "WATCH 0.2 nan -0.2 0.3 -0.4 0.5 -0.6 0.02",
-    "WATCH 0.2 0.1 -0.2 0.3 -0.4 0.5 -0.6 nan",
-    "WATCH 0.2 0.1 -0.2",
-    "motor 1 answers",
-])
-def test_a_nan_value_or_another_line_skips_the_message(line):
+@pytest.mark.parametrize("line", ["WATCH 0.2 0.1 -0.2", "motor 1 answers"])
+def test_another_line_is_no_joint_state(line):
     assert load().parse_watch(line) is None
+
+
+def test_the_joints_that_read_nan_are_named():
+    view = load()
+    assert view.silent(view.parse_watch("WATCH 0.2 nan -0.2 0.3 -0.4 0.5 -0.6 nan")) == [
+        "link_002_joint", "gripper_left_joint"]
+    assert view.silent(view.parse_watch("WATCH 0.2 0.1 -0.2 0.3 -0.4 0.5 -0.6 0.02")) == []
 
 
 def test_the_command_only_scans_and_maps_the_interface():

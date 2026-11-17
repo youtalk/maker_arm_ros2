@@ -4,9 +4,10 @@
     ros2 run maker_arm_bringup torque_off_view --interface can0 --profile FILE [--gripper-map FILE]
 
 It runs `maker-arm-cli scan --watch`, which only reads the motors and never enables one. Each
-WATCH line becomes one /joint_states message. A line with a nan, a motor that did not answer,
-is skipped. `--interface sim` runs the built-in simulator. `--gripper-map` is a file with one
-line "a,b". It stops the scan when it gets SIGINT or SIGTERM.
+WATCH line becomes one /joint_states message. A line with a nan, a motor that did not answer or
+reports a fault, is skipped, and its nan joints are logged at most once a second.
+`--interface sim` runs the built-in simulator. `--gripper-map` is a file with one line "a,b".
+It stops the scan when it gets SIGINT or SIGTERM.
 """
 
 import argparse
@@ -22,14 +23,16 @@ NAMES = [f"link_00{i}_joint" for i in range(2, 8)] + ["gripper_left_joint"]
 
 
 def parse_watch(line):
-    """Return the JointState of a WATCH line, or None for another line or a line with a nan."""
+    """Return the JointState of a WATCH line, or None for another line."""
     f = line.split()
     if len(f) != 2 + len(NAMES) or f[0] != "WATCH":
         return None
-    q = [float(x) for x in f[2:]]
-    if not all(map(math.isfinite, q)):
-        return None
-    return JointState(name=NAMES, position=q)
+    return JointState(name=NAMES, position=[float(x) for x in f[2:]])
+
+
+def silent(msg):
+    """Return the joints of msg that read nan (or inf)."""
+    return [n for n, q in zip(msg.name, msg.position) if not math.isfinite(q)]
 
 
 def command(interface, profile, gripper_map):
@@ -62,9 +65,16 @@ def main():
     try:
         for line in scan.stdout:
             msg = parse_watch(line)
-            if msg:
-                msg.header.stamp = node.get_clock().now().to_msg()
-                pub.publish(msg)
+            if not msg:
+                continue
+            if missing := silent(msg):
+                node.get_logger().warning(
+                    f"no reading from {', '.join(missing)}: the motor did not answer or "
+                    "reports a fault. RViz keeps the last pose.",
+                    throttle_duration_sec=1.0)
+                continue
+            msg.header.stamp = node.get_clock().now().to_msg()
+            pub.publish(msg)
     except (KeyboardInterrupt, SystemExit):
         pass
     finally:
