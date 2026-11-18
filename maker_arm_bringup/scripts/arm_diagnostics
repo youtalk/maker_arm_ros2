@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+"""Publish the arm's daemon and joint temperatures on /diagnostics, for rqt_runtime_monitor.
+
+real.launch.py and sim.launch.py start it through stack.launch.py. Once a second it runs
+`maker-arm-cli status` off the executor's thread and publishes 8 statuses, all named
+`maker_arm: ...`: the daemon, and one per joint with its motor's temperature. It takes the CLI
+arguments from the plugin's hardware parameters in robot_description, as park_monitor does.
+"""
+
+import json
+import subprocess
+import sys
+import threading
+import xml.etree.ElementTree as ET
+
+import rclpy
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+from rclpy.executors import ExternalShutdownException
+
+# The levels of DiagnosticStatus. Its `level` field is a byte in rclpy, so to_msg converts.
+OK, WARN, ERROR, STALE = 0, 1, 2, 3
+PERIOD_S = 1.0
+CLI_WAIT_S = 2.0
+# Motor ids 1 to 7, in the order of the STATUS line's temp_c.
+JOINTS = [f"link_00{i}_joint" for i in range(2, 8)] + ["gripper_left_joint"]
+BAD_MODES = ("fault", "refused")
+# The daemon's fault_code() in maker-arm-rs crates/maker-arm-cli/src/serve.rs.
+FAULTS = {1: "feedback timeout", 2: "motor fault", 3: "motor not in MIT mode",
+          4: "over temperature", 5: "bad command", 6: "fault reply timeout", 7: "warning",
+          8: "motor restarted", 9: "CAN transport error"}
+
+
+def daemon_cli(urdf):
+    """Return [executable, --interface, IF(, --socket, PATH)] of the plugin's hardware params.
+
+    The twin of park_monitor's daemon_cli.
+    """
+    hw = {p.get("name"): (p.text or "").strip()
+          for p in ET.fromstring(urdf).iterfind("ros2_control/hardware/param")}
+    if not hw.get("interface"):
+        raise ValueError("robot_description has no ros2_control interface parameter")
+    cli = [hw.get("executable") or "maker-arm-cli", "--interface", hw["interface"]]
+    return cli + ["--socket", hw["socket"]] if hw.get("socket") else cli
+
+
+def status_of(stdout):
+    """Return the dict of a STATUS line, or None."""
+    for line in stdout.splitlines():
+        if line.startswith("STATUS "):
+            try:
+                status = json.loads(line[len("STATUS "):])
+            except ValueError:
+                return None
+            return status if isinstance(status, dict) else None
+    return None
+
+
+def poll(cli):
+    """Return (status dict, None), or (None, why) when `status` gives no STATUS line."""
+    try:
+        r = subprocess.run([cli[0], "status", *cli[1:]], capture_output=True, text=True,
+                           timeout=CLI_WAIT_S)
+    except OSError as e:
+        return None, str(e)
+    except subprocess.TimeoutExpired:
+        return None, f"no answer in {CLI_WAIT_S:g} s"
+    if (status := status_of(r.stdout)) is None:
+        return None, r.stderr.strip() or "no STATUS line"
+    return status, None
+
+
+def diagnostics(status, why, warn_c, error_c):
+    """Return the 8 statuses as (name, level, message, {key: value}).
+
+    status is the parsed STATUS line, or None with why the reason. A joint is ERROR at or above
+    error_c and WARN at or above warn_c, and ERROR "no reply" when its temperature is null.
+    """
+    if status is None:
+        return [("maker_arm: daemon", ERROR, why, {})] + [
+            (f"maker_arm: {j}", STALE, "no data from the daemon", {}) for j in JOINTS]
+    mode, code = status.get("mode"), status.get("fault", 0)
+    fault = FAULTS.get(code, f"fault code {code}") if code else ""
+    message = f"{mode}: {fault}" if fault else str(mode)
+    out = [("maker_arm: daemon", ERROR if mode in BAD_MODES else OK, message,
+            {"mode": mode, "fault code": code, "fault": fault,
+             "clamped": status.get("clamped"), "refused": status.get("refused")})]
+    temps = status.get("temp_c") or []
+    for i, joint in enumerate(JOINTS):
+        t = temps[i] if i < len(temps) else None
+        if t is None:
+            level, message = ERROR, "no reply"
+        else:
+            level = ERROR if t >= error_c else WARN if t >= warn_c else OK
+            message = f"{t:g} C"
+        out.append((f"maker_arm: {joint}", level, message,
+                    {"motor id": i + 1, "temperature C": "" if t is None else t}))
+    return out
+
+
+def to_msg(statuses, interface, stamp):
+    msg = DiagnosticArray()
+    msg.header.stamp = stamp
+    for name, level, message, values in statuses:
+        msg.status.append(DiagnosticStatus(
+            level=bytes([level]), name=name, message=message, hardware_id=interface,
+            values=[KeyValue(key=k, value=str(v)) for k, v in values.items()]))
+    return msg
+
+
+def main():
+    rclpy.init()
+    node = rclpy.create_node("arm_diagnostics")
+    log = node.get_logger()
+    try:
+        cli = daemon_cli(node.declare_parameter("robot_description", "").value)
+    except (ET.ParseError, ValueError) as e:
+        log.error(f"arm_diagnostics: {e}")
+        return 1
+    warn_c = node.declare_parameter("temp_warn_c", 55.0)
+    error_c = node.declare_parameter("temp_error_c", 70.0)  # the daemon's temp_hold_c
+    pub = node.create_publisher(DiagnosticArray, "/diagnostics", 10)
+    busy = threading.Event()  # a poll is running: skip the tick
+
+    def work():
+        try:
+            status, why = poll(cli)
+            pub.publish(to_msg(diagnostics(status, why, warn_c.value, error_c.value), cli[2],
+                               node.get_clock().now().to_msg()))
+        except Exception as e:  # keep the node alive: a missing /diagnostics hides a hot motor
+            log.error(f"arm_diagnostics: {e!r}")
+        finally:
+            busy.clear()
+
+    def on_timer():
+        if not busy.is_set():
+            busy.set()
+            threading.Thread(target=work, daemon=True).start()
+
+    node.create_timer(PERIOD_S, on_timer)
+    log.info(f"publishing /diagnostics from: {' '.join(cli)}")
+    try:
+        rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.try_shutdown()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

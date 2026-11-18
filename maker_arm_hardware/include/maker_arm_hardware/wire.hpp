@@ -19,7 +19,7 @@ namespace maker_arm_hardware::wire
 static_assert(std::endian::native == std::endian::little, "the wire is little-endian");
 
 constexpr uint32_t kMagic = 0x4D41524D;
-constexpr uint16_t kVersion = 1;
+constexpr uint16_t kVersion = 2;
 constexpr size_t kStateLen = 272;
 
 enum class Role : uint8_t { Command = 1, Monitor = 2, Release = 3 };

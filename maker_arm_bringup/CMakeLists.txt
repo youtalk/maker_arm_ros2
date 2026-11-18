@@ -5,7 +5,8 @@ find_package(ament_cmake REQUIRED)
 
 install(DIRECTORY config launch rviz DESTINATION share/${PROJECT_NAME})
 install(PROGRAMS scripts/release scripts/go_home scripts/torque_off_view scripts/park_monitor
-  scripts/wake DESTINATION lib/${PROJECT_NAME})
+  scripts/wake scripts/arm_diagnostics
+  DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
@@ -15,12 +16,14 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_torque_off_view test/test_torque_off_view.py)
   ament_add_pytest_test(test_park_monitor test/test_park_monitor.py)
   ament_add_pytest_test(test_wake test/test_wake.py)
+  ament_add_pytest_test(test_arm_diagnostics test/test_arm_diagnostics.py)
   # V1 and the idle return on SimArm. maker-arm-cli must be on PATH. ctest runs them one at a
   # time, and all use the default sim daemon socket.
   find_package(launch_testing_ament_cmake REQUIRED)
   add_launch_test(test/test_v1_simarm.py TIMEOUT 600)
   ament_add_pytest_test(test_v1_hold test/test_v1_hold.py TIMEOUT 600)
   add_launch_test(test/test_idle_home.py TIMEOUT 300)
+  add_launch_test(test/test_diagnostics_sim.py TIMEOUT 300)
 endif()
 
 ament_package()

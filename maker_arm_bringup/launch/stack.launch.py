@@ -108,5 +108,8 @@ def generate_launch_description():
              parameters=[description, moveit["robot_description_semantic"],
                          {"idle_home_s": ParameterValue(cfg["idle_home_s"], value_type=float)}],
              condition=IfCondition(cfg["auto_park"])),
+        # The daemon's status and the motor temperatures on /diagnostics, for rqt_runtime_monitor.
+        Node(package="maker_arm_bringup", executable="arm_diagnostics", output="screen",
+             respawn=True, respawn_delay=2.0, parameters=[description]),
     ]
     return LaunchDescription([DeclareLaunchArgument(k, default_value=v) for k, v in ARGS.items()] + nodes)
