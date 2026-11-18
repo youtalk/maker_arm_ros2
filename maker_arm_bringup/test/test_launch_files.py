@@ -50,8 +50,8 @@ def real_ctx(**over):
     ctx = LaunchContext()
     ctx.launch_configurations.update(
         {"profile": "", "dynamics": "", "params": "", "gripper_map": "", "interface": "can0",
-         "residual": "", "rt": "false", "persist": "false", "rviz": "false",
-         "wrist_camera": "", "head_camera": "", **over})
+         "residual": "", "rt": "false", "persist": "false", "rviz": "false", "auto_park": "true",
+         "idle_home_s": "30.0", "wrist_camera": "", "head_camera": "", **over})
     return ctx
 
 
@@ -104,13 +104,15 @@ def test_real_launch_passes_residual_and_rt_to_the_stack(tmp_path):
     ctx = LaunchContext()
     ctx.launch_configurations.update(
         {"interface": "can0", "residual": "/r.json", "rt": "true", "persist": "false",
-         "rviz": "false", "wrist_camera": "", "head_camera": ""})
+         "rviz": "false", "auto_park": "false", "idle_home_s": "30.0", "wrist_camera": "",
+         "head_camera": ""})
     for k in real.FILES:
         (tmp_path / k).write_text("-0.03,0.01")
         ctx.launch_configurations[k] = str(tmp_path / k)
     (stack,) = real.launch_setup(ctx)
     args = dict(stack.launch_arguments)
-    assert args["residual"] == "/r.json" and args["rt"] == "true"
+    assert args["residual"] == "/r.json" and args["rt"] == "true" and args["auto_park"] == "false"
+    assert args["idle_home_s"] == "30.0"
 
 
 def test_sim_starts_the_plant_and_waits_for_plant_ready():
@@ -141,8 +143,10 @@ def test_torque_off_launch_never_starts_the_daemon():
     entities = load("torque_off").generate_launch_description().entities
     nodes = [e for e in entities if isinstance(e, Node)]
     assert {n.node_executable for n in nodes} == {"robot_state_publisher", "rviz2", "torque_off_view"}
-    declared = {e.name for e in entities if isinstance(e, DeclareLaunchArgument)}
-    assert {"interface", "profile", "gripper_map"} <= declared
+    d = {e.name: "".join(t.text for t in e.default_value)
+         for e in entities if isinstance(e, DeclareLaunchArgument)}
+    assert d["gripper_map"].endswith("config/daemon/gripper_map.txt")  # the measured map
+    assert {"interface", "profile"} <= set(d)
 
 
 def test_sim_takes_the_profile_and_the_plant_start():
@@ -155,3 +159,36 @@ def test_sim_takes_the_profile_and_the_plant_start():
     (plant,) = [e for e in entities if isinstance(e, Node) and e.node_package == "maker_arm_mujoco"]
     names = {"".join(t.text for t in key) for p in plant._Node__parameters for key in p}
     assert "start" in names
+
+
+def defaults(name):
+    return {e.name: "".join(t.text for t in e.default_value)
+            for e in load(name).generate_launch_description().entities
+            if isinstance(e, DeclareLaunchArgument)}
+
+
+def test_only_the_real_arm_parks_by_default():
+    assert defaults("real")["auto_park"] == "true"
+    assert defaults("sim")["auto_park"] == "false"  # ruling R32
+    assert defaults("stack")["auto_park"] == "false"
+    nodes = [e for e in load("stack").generate_launch_description().entities if isinstance(e, Node)]
+    (park,) = [n for n in nodes if n.node_executable == "park_monitor"]
+    assert park.condition is not None and park._ExecuteLocal__respawn
+    names = {"".join(t.text for t in key) for p in park._Node__parameters for key in p}
+    assert {"robot_description", "robot_description_semantic"} <= names
+
+
+def test_only_the_real_arm_returns_home_when_idle_by_default():
+    assert defaults("real")["idle_home_s"] == "30.0"  # ruling R42
+    assert defaults("sim")["idle_home_s"] == "0.0"
+    assert defaults("stack")["idle_home_s"] == "0.0"
+    nodes = [e for e in load("stack").generate_launch_description().entities if isinstance(e, Node)]
+    (park,) = [n for n in nodes if n.node_executable == "park_monitor"]
+    names = {"".join(t.text for t in key) for p in park._Node__parameters for key in p}
+    assert "idle_home_s" in names
+
+
+def test_the_stack_passes_the_measured_gripper_map_by_default():
+    measured = LAUNCH.parents[1] / "maker_arm_description/config/daemon/gripper_map.txt"
+    # sim.launch.py and simarm.launch.py leave it to this default.
+    assert defaults("stack")["gripper_map"] == measured.read_text().strip()

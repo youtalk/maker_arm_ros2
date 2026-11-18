@@ -34,6 +34,9 @@ private:
   // Frame order: joint j's position, velocity and effort at 3j, 3j + 1 and 3j + 2.
   std::vector<hardware_interface::StateInterface::SharedPtr> states_;
   std::vector<hardware_interface::CommandInterface::SharedPtr> commands_;
+  // Set by a reply in mode released and cleared by the next accepted Activate. While set,
+  // write() sends nothing: the controllers may still hold a pose from before the release.
+  bool released_ = false;
 };
 
 }  // namespace maker_arm_hardware

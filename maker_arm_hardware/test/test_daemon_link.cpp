@@ -10,9 +10,11 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -116,6 +118,10 @@ TEST(DaemonLink, ADigestMismatchRefusesAndNamesRelease)
   const auto e = what_of_open(o);
   EXPECT_NE(e.find("uses other files"), std::string::npos) << e;
   EXPECT_NE(e.find("release"), std::string::npos) << e;
+  // Release, then end the daemon, then launch: the order to switch files (R33).
+  const auto term = e.find("kill -TERM " + std::to_string(pid));
+  EXPECT_NE(term, std::string::npos) << e;
+  EXPECT_LT(e.find("release"), term) << e;
   EXPECT_TRUE(alive(pid)) << "the refused daemon must keep running";
   kill(pid, SIGKILL);  // sim only: no motors to drop
 }
@@ -306,4 +312,136 @@ TEST(MakerArmSystem, ActivatesAtTheMeasuredPoseAndANanOrInfSendsNothing)
   EXPECT_EQ(sys.read(t, dt), return_type::ERROR) << "a jump gives mode refused";
   EXPECT_EQ(sys.on_error(none), MakerArmSystem::CallbackReturn::SUCCESS);
   EXPECT_EQ(sys.read(t, dt), return_type::ERROR);
+}
+
+namespace
+{
+// A daemon double on o.socket for the released mode, which the sim daemon never reaches: a
+// release on a virtual interface ends it. It answers each frame in `mode` with the pose `q`
+// and counts the Activate and Command frames.
+struct FakeDaemon
+{
+  std::atomic<w::Mode> mode{w::Mode::Holding};
+  std::atomic<double> q2{0.1};  // link_004_joint
+  std::atomic<int> activates{0}, commands{0};
+  int listener;
+  std::thread peer;
+
+  explicit FakeDaemon(const DaemonOptions & o)
+  {
+    sockaddr_un a{};
+    a.sun_family = AF_UNIX;
+    o.socket.copy(a.sun_path, sizeof a.sun_path - 1);
+    listener = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (bind(listener, reinterpret_cast<const sockaddr *>(&a), sizeof a) != 0 ||
+      listen(listener, 1) != 0)
+    {
+      throw std::runtime_error("fake daemon: bind");
+    }
+    peer = std::thread([this, digest = maker_arm_hardware::options_digest(o)] {serve(digest);});
+  }
+
+  ~FakeDaemon()
+  {
+    shutdown(listener, SHUT_RDWR);
+    peer.join();
+    close(listener);
+  }
+
+  void serve(uint64_t digest)
+  {
+    pollfd p{listener, POLLIN, 0};
+    if (poll(&p, 1, 5000) != 1) {return;}  // never hangs the test
+    const int c = accept(listener, nullptr, nullptr);
+    std::array<uint8_t, 72> in{};
+    if (recv(c, in.data(), 16, MSG_WAITALL) == 16) {  // the Hello
+      // A Control frame is 16 bytes, a Command frame 72. The kind is at byte 6.
+      while (recv(c, in.data(), 16, MSG_WAITALL) == 16) {
+        if (in[6] == 3) {
+          if (recv(c, in.data() + 16, 56, MSG_WAITALL) != 56) {break;}
+          ++commands;
+        } else if (in[12] == static_cast<uint8_t>(w::Op::Activate)) {
+          ++activates;
+        }
+        std::array<uint8_t, w::kStateLen> out{0x4D, 0x52, 0x41, 0x4D, 1, 0, 4, 0};
+        std::memcpy(out.data() + 8, in.data() + 8, 4);  // the seq
+        out[12] = static_cast<uint8_t>(mode.load());
+        std::memcpy(out.data() + 16, &digest, 8);
+        const double q = q2;
+        std::memcpy(out.data() + 32 + 2 * 8, &q, 8);
+        if (send(c, out.data(), out.size(), MSG_NOSIGNAL) < 0) {break;}
+      }
+    }
+    close(c);
+  }
+};
+
+struct Configured
+{
+  MakerArmSystem sys;
+  const rclcpp_lifecycle::State none;
+
+  explicit Configured(const DaemonOptions & o)
+  {
+    if (sys.init(system_params(o)) != MakerArmSystem::CallbackReturn::SUCCESS) {
+      throw std::runtime_error("init");
+    }
+    sys.on_export_state_interfaces();
+    sys.on_export_command_interfaces();
+    if (sys.on_configure(none) != MakerArmSystem::CallbackReturn::SUCCESS) {
+      throw std::runtime_error("configure");
+    }
+  }
+};
+}  // namespace
+
+TEST(MakerArmSystem, ReleasedReadsAndSendsNothingUntilAFreshActivate)
+{
+  using hardware_interface::return_type;
+  Scratch tmp;
+  const auto o = sim_options(tmp);
+  FakeDaemon d(o);
+  Configured c(o);
+  auto & sys = c.sys;
+  const rclcpp::Time t;
+  const rclcpp::Duration dt(0, 10'000'000);
+  ASSERT_EQ(sys.on_activate(c.none), MakerArmSystem::CallbackReturn::SUCCESS);
+  EXPECT_EQ(d.activates, 1);
+  EXPECT_EQ(sys.write(t, dt), return_type::OK);
+  EXPECT_EQ(d.commands, 1);
+  // Parked: the arm drops onto its rest. The joint states follow it, and nothing is sent.
+  d.mode = w::Mode::Released;
+  d.q2 = 0.3;
+  EXPECT_EQ(sys.read(t, dt), return_type::OK);
+  EXPECT_DOUBLE_EQ(sys.get_state("link_004_joint/position"), 0.3);
+  EXPECT_EQ(sys.write(t, dt), return_type::OK);
+  EXPECT_EQ(d.commands, 1);
+  // Enabled again: still nothing until the hardware component activates again.
+  d.mode = w::Mode::Holding;
+  EXPECT_EQ(sys.read(t, dt), return_type::OK);
+  EXPECT_EQ(sys.write(t, dt), return_type::OK);
+  EXPECT_EQ(d.commands, 1);
+  ASSERT_EQ(sys.on_deactivate(c.none), MakerArmSystem::CallbackReturn::SUCCESS);
+  ASSERT_EQ(sys.on_activate(c.none), MakerArmSystem::CallbackReturn::SUCCESS);
+  EXPECT_EQ(d.activates, 2);
+  EXPECT_DOUBLE_EQ(sys.get_command("link_004_joint/position"), 0.3) << "the measured pose";
+  EXPECT_EQ(sys.write(t, dt), return_type::OK);
+  EXPECT_EQ(d.commands, 2);
+}
+
+TEST(MakerArmSystem, ALaunchOnAReleasedDaemonSendsNoActivate)
+{
+  using hardware_interface::return_type;
+  Scratch tmp;
+  const auto o = sim_options(tmp);
+  FakeDaemon d(o);
+  d.mode = w::Mode::Released;
+  Configured c(o);
+  const rclcpp::Time t;
+  const rclcpp::Duration dt(0, 10'000'000);
+  ASSERT_EQ(c.sys.on_activate(c.none), MakerArmSystem::CallbackReturn::SUCCESS);
+  EXPECT_EQ(c.sys.read(t, dt), return_type::OK);
+  EXPECT_EQ(c.sys.write(t, dt), return_type::OK);
+  EXPECT_EQ(d.activates, 0);
+  EXPECT_EQ(d.commands, 0);
 }

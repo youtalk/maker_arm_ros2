@@ -10,12 +10,15 @@ states from move_group's robot_description_semantic parameter. It does not go th
 so it checks no collisions: run it from the folded rest, right after enable. It sends nothing
 when an arm joint on /joint_states is more than MAX_TRAVEL_RAD from `home`.
 
+Before the goals it pauses Servo (ruling R41), and it leaves Servo paused: Conduit unpauses
+Servo when the owner presses HOLD. Without Servo it goes on.
+
 Ctrl-C or a missing result cancels the running goal, and the controller holds the arm where it
 is. After the goals it reads /joint_states again. An arm joint more than ARRIVED_RAD from `home`
 or a jaw more than ARRIVED_M from `closed` is a failure.
 
-It exits 1 with a message when it refuses to move, when a goal is rejected, fails or times out,
-or when the arm did not arrive. It exits 130 on Ctrl-C.
+It exits 1 with a message when it refuses to move, when the Servo pause fails, when a goal is
+rejected, fails or times out, or when the arm did not arrive. It exits 130 on Ctrl-C.
 """
 
 import sys
@@ -31,10 +34,13 @@ from rclpy.action import ActionClient
 from rclpy.signals import SignalHandlerOptions
 from rclpy.task import Future
 from sensor_msgs.msg import JointState
+from std_srvs.srv import SetBool
 from trajectory_msgs.msg import JointTrajectoryPoint
 
 ARM_ACTION = "/arm_controller/follow_joint_trajectory"
 GRIPPER_ACTION = "/gripper_controller/gripper_cmd"
+SERVO_PAUSE = "/servo_node/pause_servo"
+PAUSE_WAIT_S = 2.0  # for the pause service, and again for its reply
 DURATION_S = 5  # a slow move: the arm starts at most a few degrees from home
 WAIT_S = 10.0  # for move_group's parameter, each action server and each goal reply
 JOINT_STATE_WAIT_S = 2.0
@@ -45,8 +51,12 @@ SPIN_S = 0.1
 # and ready are 0.8 rad or more away on J2, so a run from a raised pose is refused.
 MAX_TRAVEL_RAD = 0.6
 SETTLE_S = 1.0  # the gripper goal ends within its 2 mm goal_tolerance, the jaw is still closing
-ARRIVED_RAD = 0.02
-ARRIVED_M = 0.0005
+# Ruling R37: the home band of park_monitor (its NEAR_RAD), so "at home" means one thing.
+# test_go_home.py checks that both are equal. At caps 0.5, J4 holds about 20 mrad below home.
+ARRIVED_RAD = 0.03
+# The gripper controller's own goal_tolerance (ros2_controllers.yaml). The jaw can close past
+# its goal against its closing cap: on the real arm the closed goal 0.0020 m ended at 0.0014 m.
+ARRIVED_M = 0.002
 
 
 def state(srdf, group, name):
@@ -144,6 +154,23 @@ def cancel(node, name, sent):
               file=sys.stderr)
 
 
+def pause_servo(node):
+    """Pause Servo. Raise when it does not confirm, because the arm goal would stall.
+
+    An unpaused Servo streams hold points to /arm_controller/joint_trajectory, also with no
+    twist. The controller lets them replace any FollowJointTrajectory goal, so the arm stays.
+    """
+    client = node.create_client(SetBool, SERVO_PAUSE)
+    if not client.wait_for_service(timeout_sec=PAUSE_WAIT_S):
+        print(f"go_home: no {SERVO_PAUSE} service in {PAUSE_WAIT_S} s: no Servo to pause")
+        return
+    reply = wait(node, client.call_async(SetBool.Request(data=True)), PAUSE_WAIT_S,
+                 f"{SERVO_PAUSE} reply")
+    if not reply.success:
+        raise RuntimeError(f"{SERVO_PAUSE} did not pause Servo ({reply.message}). An unpaused "
+                           "Servo stalls the goal, so go_home sends nothing.")
+
+
 def send(node, action, name, goal, ok):
     """Send goal to the action server `name`. Raise unless it succeeds and ok(result) holds.
 
@@ -174,6 +201,7 @@ def main():
         arm, hand = goals(srdf)
         home, closed = state(srdf, "arm", "home"), state(srdf, "gripper", "closed")
         check_start(home, joint_states(node))
+        pause_servo(node)
         send(node, FollowJointTrajectory, ARM_ACTION, arm,
              lambda r: r.error_code == FollowJointTrajectory.Result.SUCCESSFUL)
         send(node, GripperCommand, GRIPPER_ACTION, hand, lambda r: r.reached_goal)

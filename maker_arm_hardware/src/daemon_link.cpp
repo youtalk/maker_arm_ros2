@@ -222,9 +222,13 @@ std::unique_ptr<DaemonLink> DaemonLink::open(
             "`.");
   }
   if (s.digest != want) {
+    // A released daemon on a real interface stays up and keeps the bus lock until it ends.
+    const auto pid = std::to_string(link->peer_pid());
     throw std::runtime_error(
-            "the running daemon on " + socket + " uses other files. Support the arm, run "
-            "`ros2 run maker_arm_bringup release`, then launch again.");
+            "the running daemon on " + socket + " (pid " + pid + ") uses other files. Support "
+            "the arm and run `ros2 run maker_arm_bringup release`, unless the arm is parked. "
+            "The released daemon keeps the bus lock until it ends, so end it with `kill -TERM " +
+            pid + "`. Then launch again.");
   }
   return link;
 }

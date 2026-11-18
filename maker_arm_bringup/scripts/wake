@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Enable a parked arm again with no relaunch, then move it to home.
+#
+#     ros2 run maker_arm_bringup wake [--interface IF] [--socket PATH]
+#
+# Fold the arm into its rest and support it first. wake enables nothing unless the controller
+# manager answers and has both controllers. `maker-arm-cli enable` refuses unless the daemon is
+# released, and asks for a typed ENABLE. The daemon then holds the measured pose. The
+# controllers still hold the home pose from before the park, so they stop, the hardware
+# component turns inactive and active again (its activate takes the measured pose), and they
+# start at the measured pose. Then go_home moves the arm to home. Adds --interface can0 when the
+# caller gives none.
+set -eu
+iface=(--interface can0)
+for a in "$@"; do
+  case "$a" in --interface|--interface=*) iface=() ;; esac
+done
+controllers=(arm_controller gripper_controller)
+# list_controllers waits for ever without a controller manager.
+if ! listed=$(timeout 10 ros2 control list_controllers 2>&1); then
+  echo "wake: no controller manager answered in 10 s. Launch the stack first." \
+    "wake enabled nothing." >&2
+  exit 1
+fi
+for c in "${controllers[@]}"; do
+  case "$listed" in
+    *"$c"*) ;;
+    *) echo "wake: the controller manager has no $c. wake enabled nothing." >&2; exit 1 ;;
+  esac
+done
+if ! maker-arm-cli enable "${iface[@]}" "$@"; then
+  # A release or a park takes about 2 s (a torque ramp). Until it ends, the daemon is holding.
+  echo "wake: the arm was not enabled, and the daemon keeps its mode. If a park or a release" \
+    "is still running, wait about 2 s and run wake again." >&2
+  exit 1
+fi
+step() {
+  if ! "$@"; then
+    echo "wake: '$*' failed. The daemon holds the arm where it is." >&2
+    exit 1
+  fi
+}
+# Best effort: a controller that is already inactive is skipped.
+step ros2 control switch_controllers --best-effort --deactivate "${controllers[@]}"
+step ros2 control set_hardware_component_state MakerArm inactive
+step ros2 control set_hardware_component_state MakerArm active
+step ros2 control switch_controllers --strict --activate "${controllers[@]}"
+exec ros2 run maker_arm_bringup go_home

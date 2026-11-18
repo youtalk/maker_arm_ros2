@@ -67,12 +67,13 @@ def test_go_home_checks_that_the_arm_arrived():
     go_home = load()
     home = {"link_002_joint": 0.0, "link_003_joint": -0.1}
     closed = {"gripper_left_joint": 0.003}
-    near = {"link_002_joint": 0.019, "link_003_joint": -0.1, "gripper_left_joint": 0.0034}
-    go_home.check_arrival(home, closed, near)
-    with pytest.raises(RuntimeError, match=r"link_003_joint stopped 0\.0210 rad .*limit 0\.02 rad"):
-        go_home.check_arrival(home, closed, {**near, "link_003_joint": -0.121})
-    with pytest.raises(RuntimeError, match=r"gripper_left_joint stopped 0\.0006 m .*limit 0\.0005 m"):
-        go_home.check_arrival(home, closed, {**near, "gripper_left_joint": 0.0036})
+    near = {"link_002_joint": 0.0201, "link_003_joint": -0.1, "gripper_left_joint": 0.0049}
+    go_home.check_arrival(home, closed, near)  # J4 at caps 0.5 held 20.1 mrad off home
+    with pytest.raises(RuntimeError, match=r"link_003_joint stopped 0\.0310 rad .*limit 0\.03 rad"):
+        go_home.check_arrival(home, closed, {**near, "link_003_joint": -0.131})
+    go_home.check_arrival(home, closed, {**near, "gripper_left_joint": 0.0014})  # past the goal
+    with pytest.raises(RuntimeError, match=r"gripper_left_joint stopped 0\.0021 m .*limit 0\.002 m"):
+        go_home.check_arrival(home, closed, {**near, "gripper_left_joint": 0.0051})
     with pytest.raises(RuntimeError, match="gripper_left_joint stopped nan"):
         go_home.check_arrival(home, closed, {"link_002_joint": 0.0, "link_003_joint": -0.1})
 
@@ -89,6 +90,15 @@ class FakeGoal:
     def cancel_goal_async(self):
         self.cancelled = True
         return "cancel"
+
+
+def test_home_is_the_same_band_as_the_park_monitors():
+    loader = importlib.machinery.SourceFileLoader(
+        "park_monitor", str(PKG / "scripts" / "park_monitor"))
+    park_monitor = importlib.util.module_from_spec(
+        importlib.util.spec_from_loader("park_monitor", loader))
+    loader.exec_module(park_monitor)
+    assert load().ARRIVED_RAD == park_monitor.NEAR_RAD == 0.03  # ruling R37
 
 
 @pytest.mark.parametrize("stop", [KeyboardInterrupt(), RuntimeError("no result in 15.0 s")])
@@ -119,3 +129,76 @@ def test_ctrl_c_or_a_timeout_during_the_move_cancels_the_goal(monkeypatch, capsy
         go_home.send(None, None, "/arm", None, lambda r: True)
     assert goal.cancelled
     assert "cancelled the /arm goal" in capsys.readouterr().err
+
+
+class FakeClient:
+    """A pause_servo client: up or not, and the data of each call."""
+
+    def __init__(self, up):
+        self.up, self.calls = up, []
+
+    def wait_for_service(self, timeout_sec):
+        return self.up
+
+    def call_async(self, request):
+        self.calls.append(request.data)
+        return "reply"
+
+
+def fake_node(client):
+    return SimpleNamespace(create_client=lambda srv, name: client)
+
+
+def test_without_servo_go_home_goes_on(capsys):
+    client = FakeClient(up=False)
+    load().pause_servo(fake_node(client))
+    assert client.calls == []
+    assert "no /servo_node/pause_servo service" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("reply", [
+    SimpleNamespace(success=False, message="no"),
+    RuntimeError("no /servo_node/pause_servo reply in 2.0 s"),
+])
+def test_a_failed_or_late_pause_stops_go_home(monkeypatch, reply):
+    go_home = load()
+    client = FakeClient(up=True)
+
+    def wait(node, future, timeout, what):
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+    monkeypatch.setattr(go_home, "wait", wait)
+    with pytest.raises(RuntimeError, match="pause"):
+        go_home.pause_servo(fake_node(client))
+    assert client.calls == [True]
+
+
+def run_main(monkeypatch, pause):
+    """Run main() with the ROS calls faked. Return its exit code and the calls in order."""
+    go_home = load()
+    srdf = (PKG.parent / "maker_arm_moveit_config" / "config" / "maker_arm.srdf").read_text()
+    at_home = {**go_home.state(srdf, "arm", "home"), **go_home.state(srdf, "gripper", "closed")}
+    calls = []
+    monkeypatch.setattr(go_home, "semantic", lambda node: srdf)
+    monkeypatch.setattr(go_home, "joint_states", lambda node: at_home)
+    monkeypatch.setattr(go_home, "pause_servo", lambda node: calls.append("pause") or pause())
+    monkeypatch.setattr(go_home, "send", lambda node, action, name, goal, ok: calls.append(name))
+    monkeypatch.setattr(go_home, "SETTLE_S", 0.0)
+    return go_home.main(), calls
+
+
+def test_go_home_pauses_servo_before_the_arm_goal(monkeypatch):
+    code, calls = run_main(monkeypatch, lambda: None)
+    assert code == 0
+    assert calls == ["pause", "/arm_controller/follow_joint_trajectory",
+                     "/gripper_controller/gripper_cmd"]
+
+
+def test_a_failed_pause_sends_no_goal(monkeypatch):
+    def fail():
+        raise RuntimeError("did not pause Servo")
+
+    code, calls = run_main(monkeypatch, fail)
+    assert code == 1 and calls == ["pause"]
