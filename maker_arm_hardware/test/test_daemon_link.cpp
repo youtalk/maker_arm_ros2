@@ -118,6 +118,10 @@ TEST(DaemonLink, ADigestMismatchRefusesAndNamesRelease)
   const auto e = what_of_open(o);
   EXPECT_NE(e.find("uses other files"), std::string::npos) << e;
   EXPECT_NE(e.find("release"), std::string::npos) << e;
+  // Release, then end the daemon, then launch: the order to switch files (R33).
+  const auto term = e.find("kill -TERM " + std::to_string(pid));
+  EXPECT_NE(term, std::string::npos) << e;
+  EXPECT_LT(e.find("release"), term) << e;
   EXPECT_TRUE(alive(pid)) << "the refused daemon must keep running";
   kill(pid, SIGKILL);  // sim only: no motors to drop
 }

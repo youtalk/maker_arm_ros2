@@ -157,7 +157,10 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
     maker-arm-cli status --interface can0
     ```
 
-    If it prints a `STATUS` line, a daemon holds the arm. Do not run `doctor`. Go to step 7. In that case `doctor` refuses anyway, because the daemon holds the bus lock.
+    If it prints a `STATUS` line, a daemon runs, and it holds the bus lock. Then `doctor`, `scan` and the torque-off view cannot open `can0`. Look at the `mode` field:
+
+    - If the mode is `released`, the motors have no torque. To do steps 5 and 6, end the daemon first (see [End a released daemon](#end-a-released-daemon)). Else go to step 7.
+    - In any other mode, the daemon holds the arm. Do not run `doctor`. Go to step 7.
 
 5. Run the daemon's check on the CAN interface.
 
@@ -219,7 +222,11 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
 11. In RViz, open the MotionPlanning panel. Set the velocity and acceleration scaling to 0.1. Plan and execute the named pose `home`. It is the folded rest, pulled inside the limits.
 12. Compare the real arm with RViz. If they differ, stop. Support the arm and release it. A bad zero or a wrong joint map causes this.
 13. Only after the arm matches RViz, try other moves. The default scaling is 0.2.
-14. Use nominal caps only after the arm matches RViz and finishes the moves of steps 11 and 13 at caps 0.5.
+14. Use nominal caps only after the arm matches RViz and finishes the moves of steps 11 and 13 at caps 0.5. The running daemon keeps the files that it started with. So before you launch with another profile, do these steps:
+
+    1. Support the arm. Let it park at `home`, or release it (step 15).
+    2. End the released daemon (see [End a released daemon](#end-a-released-daemon)).
+    3. Launch with the nominal profile.
 
     ```sh
     ros2 launch maker_arm_bringup real.launch.py rviz:=true \
@@ -234,7 +241,7 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
     ros2 run maker_arm_bringup release
     ```
 
-    Only a typed `RELEASE` disables the motors. If the arm is parked, it is already released.
+    Only a typed `RELEASE` disables the motors. If the arm is parked, it is already released. The released daemon stays up and keeps the bus lock until it ends.
 
 If you stop the launch with Ctrl-C, the daemon keeps holding the arm. To turn the motors off, run the release step.
 
@@ -244,6 +251,25 @@ If a motor reports a fault, the daemon holds the arm. A gripper fault also disab
 2. Press and release the emergency stop. This cuts the motor power and clears the fault. The vendor's `maker-arm scan --clear-faults` also clears it. The daemon keeps holding.
 3. Release the arm with `ros2 run maker_arm_bringup release`. The daemon stays in its fault hold until you do this. If `release` names motors that did not confirm the disable, press the emergency stop.
 4. Find the cause of the fault. Then start the real-arm steps again from step 4.
+
+### End a released daemon
+
+A released daemon has no torque to hold, and it keeps the bus lock until it ends. End it before you launch with other files, and before `doctor` or `scan`.
+
+1. Make sure that `maker-arm-cli status --interface can0` shows `"mode": "released"`. A SIGTERM to a daemon in any other mode only holds the arm, and the daemon does not end.
+2. Find the pid of the daemon. The plugin logs it as `connected to the daemon, pid <pid>`. You can also run this command.
+
+    ```sh
+    pgrep -f 'maker-arm-cli serve --interface=can0'
+    ```
+
+3. Send SIGTERM to that pid.
+
+    ```sh
+    kill -TERM <pid>
+    ```
+
+    The daemon prints `SERVE_EXIT signal while released` to its log, removes its socket and frees the bus lock.
 
 ### Heat, park and wake
 
@@ -320,7 +346,7 @@ Before you teleoperate, move to `work` or `stand`. Servo halts at `home`, becaus
 5. Do not kill the daemon and do not cut power or CAN while the motors are on. The arm drops.
 6. Keep a person at the e-stop on the first real runs.
 7. Do not run the stack with a profile made for another zero, or with hand-made files. Never mix the dynamics file and the params file of different identifications. If a joint is more than 0.35 rad outside its limits, the daemon refuses to enable. This catches some bad zeros, not all.
-8. If the plugin refuses a running daemon, support the arm and run the release step. Then launch again.
+8. If the plugin refuses a running daemon, support the arm and run the release step, unless the arm is parked. Then end the released daemon (see [End a released daemon](#end-a-released-daemon)), and launch again.
 9. On the real arm, replay a record only with the arm raised at least 5 cm above the modeled desk. Pass that height as `--raised`.
 
 What the stack does for you:
