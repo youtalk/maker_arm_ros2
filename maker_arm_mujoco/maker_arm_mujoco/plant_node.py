@@ -25,7 +25,9 @@ from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo, CompressedImage
 from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster
 
-from .model import build_model, description, IMAGE_SIZE, PHYSICS_DT, Plant, ready, sim_profile
+from .model import (
+    build_model, description, IMAGE_SIZE, PHYSICS_DT, Plant, sim_profile, start_pose
+)
 from .scene import load_scene, perturbed
 
 CAN_FRAME = struct.Struct('=IB3x8s')  # struct can_frame: id, length, padding, data
@@ -92,12 +94,14 @@ class PlantNode(Node):
         scene = self.declare_parameter('scene', str(SHARE / 'config' / 'scene.yaml')).value
         seed = self.declare_parameter('seed', 0).value
         params_supported = self.declare_parameter('params_supported', False).value
+        start = self.declare_parameter('start', 'ready').value  # or rest: the real arm's rest
         self.camera_hz = self.declare_parameter('camera_hz', 15.0).value
         self.sock = open_can(interface)
         self.scene = perturbed(load_scene(scene), seed)
         profile = sim_profile()
         self.plant = Plant(
-            build_model(*description(), self.scene), profile, ready(profile), params_supported)
+            build_model(*description(), self.scene), profile, start_pose(profile, start),
+            params_supported)
         self.lock = threading.Lock()
         self.image_pub = self.create_publisher(
             CompressedImage, '/wrist_camera/image_raw/compressed', 1)

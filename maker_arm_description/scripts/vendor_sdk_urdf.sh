@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Vendor the Maker Arm URDF and meshes from maker-arm-sdk at a pinned commit.
-# Same SDK and same pin as maker-arm-lab. Re-vendor: bump PIN_SHA and run again.
+# The same SDK pin as maker-arm-rs's maker_arm_v1 profile. Re-vendor: bump PIN_SHA and run again.
 set -euo pipefail
 
 REPO_URL="https://github.com/makermods-robotics/maker-arm-sdk"
-PIN_SHA="b30d05a23d72e8c155a8e00f807aba8e8c705f68"
+PIN_SHA="0245316c05cb3e8d900f35e70c08e2e18e36731e"
 PKG="$(cd "$(dirname "$0")/.." && pwd)"
 
 TMP="$(mktemp -d)"
@@ -22,7 +22,7 @@ cat > "$PKG/VENDOR.md" <<EOF
 # Vendored: the SDK's URDF and meshes
 
 - Source: $REPO_URL, directory \`urdf/maker_arm\`
-- Pinned commit: \`$PIN_SHA\` (the same pin as maker-arm-lab)
+- Pinned commit: \`$PIN_SHA\` (the same pin as maker-arm-rs's \`maker_arm_v1\` profile)
 - License: Apache-2.0, MakerMods (see \`NOTICE\` in the repository root)
 - Vendored on: $(date -u +%Y-%m-%d) with \`scripts/vendor_sdk_urdf.sh\`
 - Files: \`urdf/maker_arm/robot.urdf\` is \`urdf/maker_arm_sdk.urdf\`, and \`meshes/*.stl\` are copied as they are.

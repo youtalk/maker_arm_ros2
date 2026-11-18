@@ -18,7 +18,9 @@
   <test_depend>ament_index_python</test_depend>
   <test_depend>maker_arm_description</test_depend>
   <test_depend>moveit_servo</test_depend>
+  <test_depend>python3-numpy</test_depend>
   <test_depend>python3-yaml</test_depend>
+  <test_depend>urdfdom_py</test_depend>
   <test_depend>xacro</test_depend>
 
   <export>

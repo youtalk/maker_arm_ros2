@@ -12,7 +12,10 @@ PROFILES = sorted(DESC.glob("config/daemon/*profile*.json"))
 SCRIPT = PKG / "scripts" / "limits_from_profiles.py"
 MARGIN = 0.05
 ARM = [f"link_00{i}_joint" for i in range(2, 8)]
-JAW_HALF_STROKE = 0.0524125  # maker-arm-cli's provisional grip map
+JAW_HALF_STROKE = 0.0524125  # m, the URDF's jaw limit
+# maker-arm-cli's GripMap::provisional, the vendor's preview: jaw gap = A * angle + B. The jaw
+# closes toward the gripper's q_hi.
+A, B = -0.0502590, 0.000337389
 
 
 def moveit_limits():
@@ -35,20 +38,21 @@ def test_every_moveit_limit_is_inside_every_profile_and_the_urdf():
         joints = json.loads(prof.read_text())["joints"]
         for i, name in enumerate(ARM):
             lo, hi = limits[name]
-            assert lo >= joints[i]["q_lo"] + MARGIN - 1e-9
-            assert hi <= joints[i]["q_hi"] - MARGIN + 1e-9
+            # 5e-8: the yaml prints 7 decimals
+            assert lo >= joints[i]["q_lo"] + MARGIN - 5e-8
+            assert hi <= joints[i]["q_hi"] - MARGIN + 5e-8
 
 
-def test_the_jaw_limits_keep_the_arm_margin_through_the_provisional_grip_map():
+def test_the_gripper_range_uses_the_vendor_map():
     lo, hi = moveit_limits()["gripper_left_joint"]
+    want_lo, want_hi = 0.0, JAW_HALF_STROKE  # the URDF range
     for prof in PROFILES:
         g = json.loads(prof.read_text())["joints"][6]
-        a = 2 * JAW_HALF_STROKE / (g["q_hi"] - g["q_lo"])  # jaw gap per motor rad
-        margin_m = MARGIN * a / 2  # gripper_left_joint is half the gap
-        # 5e-8: the yaml prints 7 decimals
-        assert lo >= margin_m - 5e-8
-        assert hi <= JAW_HALF_STROKE - margin_m + 5e-8
-    assert 0.0 < lo < hi < JAW_HALF_STROKE
+        # gripper_left_joint is half the gap: the closed side from q_hi, the open side from q_lo.
+        want_lo = max(want_lo, (A * (g["q_hi"] - MARGIN) + B) / 2)
+        want_hi = min(want_hi, (A * (g["q_lo"] + MARGIN) + B) / 2)
+    # 1e-7: the yaml prints 7 decimals, and A and B have 6 digits
+    assert abs(lo - want_lo) < 1e-7 and abs(hi - want_hi) < 1e-7, (lo, hi, want_lo, want_hi)
 
 
 def test_the_yaml_is_what_the_script_writes(tmp_path):

@@ -18,7 +18,8 @@ def launch_setup(context):
     args = {k: context.launch_configurations[k] for k in names}
     if not args["profile"]:
         raise RuntimeError(
-            "real.launch.py needs a profile for your arm. Make it with: " + EXPORT
+            "real.launch.py needs a profile. The default real_profile_caps05.json is for an arm "
+            "in the vendor zero. For an arm with another zero, make one with: " + EXPORT
             + " Then pass profile:=<path>.")
     missing = [f"{k} ({v})" for k, v in args.items() if k in FILES and v and not os.path.isfile(v)]
     if missing:
@@ -33,7 +34,9 @@ def launch_setup(context):
 
 def generate_launch_description():
     # No residual until MA3 ships one. The plugin names a residual file it cannot read.
-    defaults = {"profile": "", "dynamics": os.path.join(DAEMON, "dynamics_urdf.json"),
+    # The shipped profile is the vendor calibration at caps 0.5.
+    defaults = {"profile": os.path.join(DAEMON, "real_profile_caps05.json"),
+                "dynamics": os.path.join(DAEMON, "dynamics_urdf.json"),
                 "params": "", "gripper_map": "", "interface": "can0", "residual": "",
                 "rt": "false", "persist": "false", "rviz": "false"}
     return LaunchDescription([DeclareLaunchArgument(k, default_value=v) for k, v in defaults.items()]

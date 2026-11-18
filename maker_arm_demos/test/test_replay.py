@@ -10,7 +10,8 @@ from maker_arm_demos.replay import (
 )
 
 ARM = [f'link_00{i}_joint' for i in range(2, 8)]
-READY = [0.0, -1.79, 2.05, -1.3, 0.0, 0.0]
+READY = [0.0, -1.5518, 1.6901, -1.038, 0.0, 0.0]  # the SRDF's ready
+OPEN = 0.0405171  # the SRDF's open
 with open(os.path.join(get_package_share_directory('maker_arm_moveit_config'), 'config',
                        'joint_limits.yaml')) as f:
     JOINTS = yaml.safe_load(f)['joint_limits']
@@ -19,7 +20,7 @@ with open(os.path.join(get_package_share_directory('maker_arm_moveit_config'), '
 def record(points=None, grips=None):
     """READY, then 0.02 rad further on every joint 1 s later, with an open and a grasp."""
     return Record(ARM, points or [(0.0, READY), (1.0, [q + 0.02 for q in READY])],
-                  grips or [(0.0, 0.050636), (0.5, 0.014)])
+                  grips or [(0.0, OPEN), (0.5, 0.014)])
 
 
 def test_replay_scales_every_time_by_one_over_the_speed():
@@ -33,16 +34,16 @@ def test_replay_scales_every_time_by_one_over_the_speed():
 def test_replay_refuses_a_start_farther_than_the_tolerance():
     measured = dict(zip(ARM, READY))
     check_start(measured, record())  # at the start
-    check_start({**measured, 'link_004_joint': 2.05 + 0.01}, record())
+    check_start({**measured, 'link_004_joint': 1.6901 + 0.01}, record())
     with pytest.raises(ValueError, match='link_004_joint'):
-        check_start({**measured, 'link_004_joint': 2.05 + 0.03}, record())
+        check_start({**measured, 'link_004_joint': 1.6901 + 0.03}, record())
 
 
 def test_replay_refuses_a_start_just_past_the_tolerance():
     measured = dict(zip(ARM, READY))
     check_start({n: q + 0.019 for n, q in measured.items()}, record())  # every joint within
     with pytest.raises(ValueError, match='link_005_joint'):
-        check_start({**measured, 'link_005_joint': -1.3 + 0.021}, record())
+        check_start({**measured, 'link_005_joint': -1.038 + 0.021}, record())
 
 
 def test_replay_refuses_an_unknown_joint_anywhere():
@@ -53,13 +54,13 @@ def test_replay_refuses_an_unknown_joint_anywhere():
             check_start({**measured, name: float('nan')}, record())
     # The NaN joint is named, not a finite joint that is also too far.
     with pytest.raises(ValueError, match='link_006_joint is nan'):
-        check_start({**measured, 'link_003_joint': -1.79 + 0.5,
+        check_start({**measured, 'link_003_joint': -1.5518 + 0.5,
                      'link_006_joint': float('nan')}, record())
 
 
 def test_replay_refuses_a_point_outside_the_moveit_limits():
     check_limits(record(), JOINTS)
-    outside = [0.0, 0.0, 2.05, -1.3, 0.0, 0.0]  # link_003_joint stops at -0.05
+    outside = [0.0, 0.0, *READY[2:]]  # link_003_joint stops at -0.106
     with pytest.raises(ValueError, match='link_003_joint'):
         check_limits(record(points=[(0.0, READY), (5.0, outside)]), JOINTS)
     with pytest.raises(ValueError, match='gripper_left_joint'):
@@ -70,7 +71,7 @@ def test_replay_refuses_a_point_outside_the_moveit_limits():
 
 
 def test_replay_refuses_a_record_faster_than_the_moveit_limits():
-    jump = [0.0, -1.79, 2.05, -1.3, 0.0, 1.0]  # link_007_joint 1 rad in 0.1 s: 10 rad/s
+    jump = [*READY[:5], 1.0]  # link_007_joint 1 rad in 0.1 s: 10 rad/s
     with pytest.raises(ValueError, match='link_007_joint'):
         check_limits(record(points=[(0.0, READY), (0.1, jump)]), JOINTS)
     with pytest.raises(ValueError, match='time'):
@@ -108,7 +109,7 @@ def test_a_raised_arm_adds_its_height_and_stands_at_least_5_cm():
 def test_the_lowest_fingertip_comes_from_fk_over_the_whole_record():
     """FK on the planning model, with no live stack."""
     low, t = lowest_tip(record(points=[(0.0, READY)]))
-    assert t == 0.0 and low == pytest.approx(0.1287, abs=0.001)  # tips under grasp_center
-    down = [0.0, -2.1, 2.05, -1.3, 0.0, 0.0]  # the shoulder lowers the tool
+    assert t == 0.0 and low == pytest.approx(0.1306, abs=0.001)  # tips under grasp_center
+    down = [0.0, -1.8618, *READY[2:]]  # the shoulder lowers the tool
     low, t = lowest_tip(record(points=[(0.0, READY), (1.0, down), (2.0, READY)]))
-    assert t == 1.0 and low == pytest.approx(0.0388, abs=0.001)
+    assert t == 1.0 and low == pytest.approx(0.0394, abs=0.001)

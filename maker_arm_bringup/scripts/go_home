@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+"""Move the arm to the SRDF's `home` and the jaw to `closed`, straight through the controllers.
+
+    ros2 run maker_arm_bringup go_home
+
+After enable on an arm in the vendor zero, J2, J3 and the jaw rest just outside MoveIt's
+planning range, and MoveIt refuses to plan from there. This sends one FollowJointTrajectory
+goal that reaches `home` in DURATION_S and one GripperCommand goal at `closed`. It reads both
+states from move_group's robot_description_semantic parameter. It does not go through MoveIt,
+so it checks no collisions: run it from the folded rest, right after enable. It sends nothing
+when an arm joint on /joint_states is more than MAX_TRAVEL_RAD from `home`.
+
+Ctrl-C or a missing result cancels the running goal, and the controller holds the arm where it
+is. After the goals it reads /joint_states again. An arm joint more than ARRIVED_RAD from `home`
+or a jaw more than ARRIVED_M from `closed` is a failure.
+
+It exits 1 with a message when it refuses to move, when a goal is rejected, fails or times out,
+or when the arm did not arrive. It exits 130 on Ctrl-C.
+"""
+
+import sys
+import time
+import xml.etree.ElementTree as ET
+
+import rclpy
+from action_msgs.msg import GoalStatus
+from control_msgs.action import FollowJointTrajectory, GripperCommand
+from rcl_interfaces.msg import ParameterType
+from rcl_interfaces.srv import GetParameters
+from rclpy.action import ActionClient
+from rclpy.signals import SignalHandlerOptions
+from rclpy.task import Future
+from sensor_msgs.msg import JointState
+from trajectory_msgs.msg import JointTrajectoryPoint
+
+ARM_ACTION = "/arm_controller/follow_joint_trajectory"
+GRIPPER_ACTION = "/gripper_controller/gripper_cmd"
+DURATION_S = 5  # a slow move: the arm starts at most a few degrees from home
+WAIT_S = 10.0  # for move_group's parameter, each action server and each goal reply
+JOINT_STATE_WAIT_S = 2.0
+CANCEL_WAIT_S = 1.0
+# rclpy's signal handler is off, so Ctrl-C lands only between two spins of this length.
+SPIN_S = 0.1
+# The folded rest of the real arm is up to 0.43 rad from home (J4 in the P0 scan). work, stand
+# and ready are 0.8 rad or more away on J2, so a run from a raised pose is refused.
+MAX_TRAVEL_RAD = 0.6
+SETTLE_S = 1.0  # the gripper goal ends within its 2 mm goal_tolerance, the jaw is still closing
+ARRIVED_RAD = 0.02
+ARRIVED_M = 0.0005
+
+
+def state(srdf, group, name):
+    """Return {joint: value} of the SRDF's group_state `name` of `group`, in SRDF order."""
+    for s in ET.fromstring(srdf).findall("group_state"):
+        if (s.get("group"), s.get("name")) == (group, name):
+            return {j.get("name"): float(j.get("value")) for j in s.findall("joint")}
+    raise ValueError(f"the SRDF has no {group} state {name}")
+
+
+def goals(srdf):
+    """Return the arm goal at `home` and the gripper goal at `closed`."""
+    home = state(srdf, "arm", "home")
+    arm = FollowJointTrajectory.Goal()
+    arm.trajectory.joint_names = list(home)
+    point = JointTrajectoryPoint(positions=list(home.values()))
+    point.time_from_start.sec = DURATION_S
+    arm.trajectory.points = [point]
+    hand = GripperCommand.Goal()
+    hand.command.position = state(srdf, "gripper", "closed")["gripper_left_joint"]
+    return arm, hand
+
+
+def far(goal, measured, limit):
+    """Return (joint, distance) of the first joint of goal more than limit from measured, or None."""
+    for name, q in goal.items():
+        d = abs(measured.get(name, float("nan")) - q)
+        if not d <= limit:  # NaN too
+            return name, d
+    return None
+
+
+def check_start(home, measured):
+    """Raise unless every joint of home is within MAX_TRAVEL_RAD of its measured position."""
+    if miss := far(home, measured, MAX_TRAVEL_RAD):
+        raise RuntimeError(
+            f"{miss[0]} is {miss[1]:.3f} rad from home (limit {MAX_TRAVEL_RAD}). Run go_home only "
+            "from the folded rest right after enable. Use MoveIt for any other start.")
+
+
+def check_arrival(home, closed, measured):
+    """Raise unless the arm is within ARRIVED_RAD of home and the jaw within ARRIVED_M of closed."""
+    for goal, limit, unit in ((home, ARRIVED_RAD, "rad"), (closed, ARRIVED_M, "m")):
+        if miss := far(goal, measured, limit):
+            raise RuntimeError(
+                f"{miss[0]} stopped {miss[1]:.4f} {unit} from its goal (limit {limit} {unit}). "
+                "The arm holds there.")
+
+
+def wait(node, future, timeout, what):
+    deadline = time.monotonic() + timeout
+    while not future.done() and time.monotonic() < deadline:
+        rclpy.spin_until_future_complete(node, future, timeout_sec=SPIN_S)
+    if not future.done():
+        raise RuntimeError(f"no {what} in {timeout} s")
+    return future.result()
+
+
+def semantic(node):
+    """Return move_group's robot_description_semantic parameter."""
+    client = node.create_client(GetParameters, "/move_group/get_parameters")
+    if not client.wait_for_service(timeout_sec=WAIT_S):
+        raise RuntimeError(f"no move_group parameter service in {WAIT_S} s")
+    request = GetParameters.Request(names=["robot_description_semantic"])
+    (value,) = wait(node, client.call_async(request), WAIT_S, "move_group parameter reply").values
+    if value.type != ParameterType.PARAMETER_STRING:
+        raise RuntimeError("move_group has no robot_description_semantic parameter")
+    return value.string_value
+
+
+def joint_states(node):
+    """Return {joint: position} of one /joint_states message."""
+    future = Future()
+    sub = node.create_subscription(
+        JointState, "/joint_states", lambda m: future.done() or future.set_result(m), 10)
+    msg = wait(node, future, JOINT_STATE_WAIT_S, "/joint_states message")
+    node.destroy_subscription(sub)
+    return dict(zip(msg.name, msg.position))
+
+
+def cancel(node, name, sent):
+    """Cancel the goal of the send_goal_async future `sent`, if it was accepted."""
+    try:
+        handle = wait(node, sent, CANCEL_WAIT_S, f"{name} goal reply")
+        if not handle.accepted:
+            return
+        reply = wait(node, handle.cancel_goal_async(), CANCEL_WAIT_S, f"{name} cancel reply")
+    except RuntimeError as e:
+        print(f"go_home: {e}. The goal can still be running.", file=sys.stderr)
+        return
+    if reply.goals_canceling:
+        print(f"go_home: cancelled the {name} goal. The arm holds where it is.", file=sys.stderr)
+    else:
+        print(f"go_home: {name} did not cancel the goal (code {reply.return_code}).",
+              file=sys.stderr)
+
+
+def send(node, action, name, goal, ok):
+    """Send goal to the action server `name`. Raise unless it succeeds and ok(result) holds.
+
+    A goal outlives its client, so Ctrl-C or a timeout cancels it before the raise.
+    """
+    client = ActionClient(node, action, name)
+    if not client.wait_for_server(timeout_sec=WAIT_S):
+        raise RuntimeError(f"no {name} action server in {WAIT_S} s")
+    sent = client.send_goal_async(goal)
+    try:
+        handle = wait(node, sent, WAIT_S, f"{name} goal reply")
+        if not handle.accepted:
+            raise RuntimeError(f"{name} rejected the goal")
+        res = wait(node, handle.get_result_async(), DURATION_S + WAIT_S, f"{name} result")
+    except (KeyboardInterrupt, RuntimeError):
+        cancel(node, name, sent)
+        raise
+    if res.status != GoalStatus.STATUS_SUCCEEDED or not ok(res.result):
+        raise RuntimeError(f"{name} failed: status {res.status}, {res.result}")
+
+
+def main():
+    # rclpy's own handler shuts the context down on Ctrl-C, and then no cancel can go out.
+    rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
+    node = rclpy.create_node("go_home")
+    try:
+        srdf = semantic(node)
+        arm, hand = goals(srdf)
+        home, closed = state(srdf, "arm", "home"), state(srdf, "gripper", "closed")
+        check_start(home, joint_states(node))
+        send(node, FollowJointTrajectory, ARM_ACTION, arm,
+             lambda r: r.error_code == FollowJointTrajectory.Result.SUCCESSFUL)
+        send(node, GripperCommand, GRIPPER_ACTION, hand, lambda r: r.reached_goal)
+        time.sleep(SETTLE_S)
+        check_arrival(home, closed, joint_states(node))
+    except KeyboardInterrupt:
+        print("go_home: stopped by Ctrl-C", file=sys.stderr)
+        return 130
+    except (RuntimeError, ValueError) as e:
+        print(f"go_home: {e}", file=sys.stderr)
+        return 1
+    finally:
+        node.destroy_node()
+        rclpy.try_shutdown()
+    print("go_home: the arm is at home and the jaw is closed")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

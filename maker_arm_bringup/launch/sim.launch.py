@@ -21,13 +21,13 @@ def generate_launch_description():
         package="maker_arm_mujoco", executable="plant", output="screen",
         parameters=[{"interface": "vcan0", "camera_hz": 30.0,
                      "seed": ParameterValue(LaunchConfiguration("seed"), value_type=int)},
-                    {"scene": LaunchConfiguration("scene")}])
+                    {"scene": LaunchConfiguration("scene"), "start": LaunchConfiguration("start")}])
     stack = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(share("maker_arm_bringup"), "launch", "stack.launch.py")),
         launch_arguments={
             "interface": "vcan0",
-            "profile": os.path.join(DAEMON, "sim_profile.json"),
+            "profile": LaunchConfiguration("profile"),
             "dynamics": os.path.join(DAEMON, "dynamics_urdf.json"),
             "persist": LaunchConfiguration("persist"),
             "rviz": LaunchConfiguration("rviz"),
@@ -43,6 +43,11 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "scene", default_value=os.path.join(share("maker_arm_mujoco"), "config", "scene.yaml")),
         DeclareLaunchArgument("seed", default_value="0"),
+        # The plant reports motor 5 negated, as the real arm does: a profile with the vendor
+        # calibration. real_profile_caps05.json and start:=rest rehearse the real arm's first launch.
+        DeclareLaunchArgument(
+            "profile", default_value=os.path.join(DAEMON, "real_profile_nominal.json")),
+        DeclareLaunchArgument("start", default_value="ready"),
         plant,
         RegisterEventHandler(OnProcessIO(target_action=plant, on_stdout=on_stdout)),
         # The plant's own message is already on the screen; a dead plant ends the launch.

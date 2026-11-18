@@ -1,6 +1,7 @@
 import json
 import math
 import os
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -9,7 +10,8 @@ from urdf_parser_py.urdf import URDF
 
 PKG = Path(__file__).resolve().parents[1]
 XACRO = PKG / "urdf" / "maker_arm.urdf.xacro"
-# The lab's robots/frames.py HOME_JOINT_POS. The ready state levels its link_006 to 0.
+DAEMON = PKG / "config" / "daemon"
+# The lab's robots/frames.py HOME_JOINT_POS.
 LAB_HOME = {
     "link_002_joint": 0.0,
     "link_003_joint": -1.79,
@@ -18,7 +20,9 @@ LAB_HOME = {
     "link_006_joint": -0.22,
     "link_007_joint": 0.0,
 }
-READY = {**LAB_HOME, "link_006_joint": 0.0}
+# The SRDF's ready: the lab's grasp_center position with link_006 at 0, and link_005 inside the
+# vendor wrist_flex stop.
+READY = dict(zip(LAB_HOME, (0.0, -1.5518, 1.6901, -1.038, 0.0, 0.0)))
 ARM_AND_GRIPPER = [*LAB_HOME, "gripper_left_joint"]
 
 
@@ -144,3 +148,17 @@ def test_the_daemon_files_are_the_cli_exports():
     assert dyn["provenance"]["source"] == "urdf" and len(dyn["provenance"]["urdf_sha256"]) == 64
     assert len(dyn["links"]) == 6 and len(dyn["bodies"]) >= 6
     assert np.allclose(dyn["mount_rpy"], (math.pi / 2, 0, math.pi))
+
+
+def test_the_real_profiles_are_the_cli_exports(tmp_path):
+    cal = DAEMON / "vendor_calibration.json"
+    for caps, name in (("0.5", "real_profile_caps05.json"), ("1.0", "real_profile_nominal.json")):
+        out = tmp_path / name
+        subprocess.run(["maker-arm-cli", "export", "--calibration", str(cal), "--caps", caps,
+                        "--out", str(out)], check=True)
+        assert out.read_bytes() == (DAEMON / name).read_bytes(), name
+
+
+def test_the_vendor_calibration_is_the_gravity_convention():
+    cal = json.loads((DAEMON / "vendor_calibration.json").read_text())
+    assert cal == {"direction": [1, 1, 1, 1, -1, 1, 1], "offset": [0] * 7}

@@ -35,13 +35,15 @@ from maker_arm_demos.record import Record
 from maker_arm_demos.servo_probe import grip, start_node, wait_for
 
 FRAME = 'mount_link'
-ABOVE_M = 0.08  # approach, lift and retreat height over the grasp
+# Approach, lift and retreat height over the grasp. The vendor wrist_flex stop keeps a tool-down
+# grasp_center at 0.045 m or lower at the farthest pick of any seed (0.237 m out), 7.8 mm over
+# the grasp.
+ABOVE_M = 0.007
 TIP_M = 0.0342  # the fingertips reach this far below grasp_center (the URDF finger meshes)
 TIP_CLEARANCE_M = 0.003  # fingertips over the desk at the grasp
 # A jaw goal at the object's half width minus this grips it. A `closed` goal presses a small
 # object so hard that it shifts (the plant).
 SQUEEZE_M = 0.001
-OPEN = 0.050636  # the SRDF's `open`
 FINGERS = ['gripper_left', 'gripper_right']
 PLACED_MM = 30.0
 START_MM = 5.0  # the plant's object lies this close to the scene's pose for the same seed
@@ -125,6 +127,8 @@ def run(robot, node, tf, args):
     arm = robot.get_planning_component('arm')
     current_state(arm)
     lin = PlanRequestParameters(robot, 'lin')
+    hand = robot.get_planning_component('gripper')
+    opened = hand.get_named_target_state_values('open')['gripper_left_joint']  # the SRDF's open
     rec = Recorder(robot, node)
 
     def go(step, params, x, y, z):
@@ -136,7 +140,7 @@ def run(robot, node, tf, args):
     grasp_z = scene['desk_z'] + TIP_M + TIP_CLEARANCE_M
     held = grasp_z - z  # grasp_center over the object's center while it is held
     px, py, pz = obj['place']
-    rec.grip(OPEN)
+    rec.grip(opened)
     go('approach', None, x, y, grasp_z + ABOVE_M)
     go('descend', lin, x, y, grasp_z)
     rec.grip(obj['size'][1] / 2 - SQUEEZE_M)  # the jaws close along the object's y axis
@@ -144,7 +148,7 @@ def run(robot, node, tf, args):
     go('lift', lin, x, y, grasp_z + ABOVE_M)
     go('carry', None, px, py, pz + held + ABOVE_M)
     go('place', lin, px, py, pz + held)
-    rec.grip(OPEN)
+    rec.grip(opened)
     attach(CollisionObject.REMOVE)
     go('retreat', lin, px, py, pz + held + ABOVE_M)
     rec.record.save(args.out)
