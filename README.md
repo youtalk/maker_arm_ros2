@@ -217,6 +217,8 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
     ros2 run maker_arm_bringup go_home
     ```
 
+    `go_home` first pauses Servo and leaves it paused, because an unpaused Servo (for example after Conduit's HOLD) sends hold points that replace any trajectory goal. For the same reason, RViz Plan & Execute stalls while Servo is unpaused: pause it with `ros2 service call /servo_node/pause_servo std_srvs/srv/SetBool "{data: true}"`.
+
     To stop the move, press Ctrl-C. `go_home` then cancels its goal, and the arm holds where it is. After the move, `go_home` reads the joints again. If it reports that a joint stopped away from its goal, stop. Support the arm and release it (step 15).
 
 11. In RViz, open the MotionPlanning panel. Set the velocity and acceleration scaling to 0.1. Plan and execute the named pose `home`. It is the folded rest, pulled inside the limits.
