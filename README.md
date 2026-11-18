@@ -355,7 +355,7 @@ The open and closed values come from the measured gripper map in `maker_arm_desc
 
 On the real arm, run `ros2 run maker_arm_bringup go_home` once after the launch, before you use Conduit's poses. Conduit's poses go through MoveIt, and MoveIt cannot plan from the rest pose after enable. After `go_home`, the arm stays enabled at `home` for 60 s. If the arm parks, run `wake`.
 
-Before you teleoperate, move to `work` or `stand`. Servo halts at `home`, because `home` is a singularity. At `ready`, J4 sits near its limit, so Servo stops a push that turns J4 further down. Servo moves along every axis from `work` and `stand`, but it slows near them: in the simulation, a 1 s push delivered about 20 to 100% of the commanded motion. A push that pitches the tool down turns J4 toward its stop. From `work` or `stand`, Servo stops that push after about 0.2 to 0.3 rad of J4 travel, with the status `JOINT_BOUND`. This stop is the joint limit, not a fault. The real arm is not yet verified.
+Before you teleoperate, move to `work` or `stand`. Servo halts at `home`, because `home` is a singularity. At `ready`, J4 sits near its limit, so Servo stops a push that turns J4 further down. Servo moves along every axis from `work` and `stand`. In the simulation, Servo got 200 mm pushes (0.05 m/s for 4 s) along x, y and z. The tip moved 38 to 195 mm. Servo slows down near a singularity, and it stops 0.05 rad before a joint limit. A push that pitches the tool down or lifts the tip turns J4 toward its lower stop. Servo stops that push near the stop, with the status `JOINT_BOUND`. This stop is the joint limit, not a fault. The real arm is not yet verified.
 
 ### Run a Conduit demo alone
 

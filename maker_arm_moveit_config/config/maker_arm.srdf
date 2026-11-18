@@ -18,9 +18,9 @@
     <!--GROUP STATES: Purpose: Define a named state for a particular group, in terms of joint values. This is useful to define states like 'folded arms'-->
     <!-- work and stand are the states MoveIt Servo drives from, and they come first because
          Conduit shows the arm's states in SRDF order. The Jacobian condition number at
-         grasp_center is 25.4 at work and 22.4 at stand, between Servo's
-         lower_singularity_threshold (17) and its hard_stop_singularity_threshold (30), so Servo
-         moves along every axis but decelerates. Both keep every joint 0.2 rad off Servo's joint
+         grasp_center is 25.4 at work and 22.4 at stand, below Servo's
+         hard_stop_singularity_threshold (40), so Servo moves along every axis from both. Both
+         keep every joint 0.2 rad off Servo's joint
          bound (test_srdf.py). stand has link_006 at 0, so the gripper stays in the arm's plane.
          work keeps link_006 at -0.1: at 0, Servo halted for a singularity on -x. -->
     <group_state name="work" group="arm">
@@ -42,7 +42,7 @@
     <!-- ready keeps the lab's grasp_center position (0.2763, 0, 0.1607) with link_006 at 0,
          so the gripper stays in the arm's plane. The vendor wrist_flex stop keeps the tool
          28.5 deg off vertical: link_005 sits 0.05 rad inside its MoveIt limit. The condition
-         number is 23.8, but link_005 sits inside Servo's joint margin, so Servo stops a push
+         number is 23.8, but link_005 sits on Servo's joint margin, so Servo stops a push
          that turns it further down. -->
     <group_state name="ready" group="arm">
         <joint name="link_002_joint" value="0"/>
@@ -53,8 +53,8 @@
         <joint name="link_007_joint" value="0"/>
     </group_state>
     <!-- home is the vendor zero (folded against the base) pulled 0.05 rad inside the MoveIt
-         limits. It is the rest pose before a release. The condition number is 41.0, so Servo
-         halts here. -->
+         limits. It is the rest pose before a release. The condition number is 41.0, above
+         Servo's hard stop (40), so Servo halts here. -->
     <group_state name="home" group="arm">
         <joint name="link_002_joint" value="0"/>
         <joint name="link_003_joint" value="-0.1558505"/>
