@@ -1,0 +1,5 @@
+<library path="maker_arm_planning_adapters">
+  <class name="maker_arm_moveit_config/DefaultPlannerId" type="maker_arm_moveit_config::DefaultPlannerId" base_class_type="planning_interface::PlanningRequestAdapter">
+    <description>Turns an empty planner id into the pipeline's default_planner_config.</description>
+  </class>
+</library>
