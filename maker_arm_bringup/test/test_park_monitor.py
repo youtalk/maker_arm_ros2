@@ -367,7 +367,7 @@ def test_a_twist_during_the_return_cancels_the_goal():
     stop = threading.Event()
     move = FakeMove(stop)
     # Without Servo the goal goes out.
-    assert pm.return_home(FakePause(up=False), move, "goal", stop) == (
+    assert pm.return_home(FakePause(up=False), move, "goal", stop, threading.Event()) == (
         False, "return home cancelled: a twist arrived")
     assert move.sent == ["goal"] and move.cancelled
 
@@ -379,7 +379,7 @@ def test_a_refused_or_late_servo_pause_sends_no_goal(monkeypatch):
     move = FakeMove(stop)
     refused = FakePause(up=True, reply=SimpleNamespace(success=False, message="no"))
     for pause in (refused, FakePause(up=True)):
-        returned, line = pm.return_home(pause, move, "goal", stop)
+        returned, line = pm.return_home(pause, move, "goal", stop, threading.Event())
         assert not returned and line.startswith("not returning home") and pause.calls == 1
     assert move.sent == []
 
@@ -394,7 +394,47 @@ def test_a_goal_that_moveit_accepts_late_is_cancelled(monkeypatch):
     handle.cancel_goal_async = lambda: setattr(handle, "cancelled", True)
     move = SimpleNamespace(wait_for_server=lambda timeout_sec: True,
                            send_goal_async=lambda goal: reply)
-    returned, line = pm.return_home(FakePause(up=False), move, "goal", threading.Event())
+    pending = threading.Event()
+    returned, line = pm.return_home(FakePause(up=False), move, "goal", threading.Event(), pending)
     assert not returned and "no goal reply in 0.1 s" in line and not handle.cancelled
+    assert pending.is_set()
     reply.set_result(handle)  # MoveIt accepts after the wait
-    assert handle.cancelled
+    assert handle.cancelled and not pending.is_set()
+
+
+def test_a_late_goal_reply_that_failed_clears_the_pending_flag():
+    from rclpy.task import Future
+
+    pending, sent = threading.Event(), Future()
+    pending.set()
+    sent.set_exception(RuntimeError("the action client is gone"))
+    load().cancel_late(sent, pending)  # logs, and does not raise
+    assert not pending.is_set()
+
+
+def test_no_second_return_while_a_late_goal_reply_is_pending(monkeypatch):
+    from rclpy.task import Future
+
+    pm = load()
+    monkeypatch.setattr(pm, "MOVE_WAIT_S", 0.1)
+    replies = []
+    move = SimpleNamespace(wait_for_server=lambda timeout_sec: True,
+                           send_goal_async=lambda goal: replies.append(Future()) or replies[-1])
+    handle = SimpleNamespace(accepted=True, cancelled=False)
+    handle.cancel_goal_async = lambda: setattr(handle, "cancelled", True)
+    stop, pending, worker, since, due_at = threading.Event(), threading.Event(), None, None, []
+    for k in range(80):  # 20 s still, 0.031 rad from home, after a visit at home
+        t = k / 4
+        since, due = pm.idle_return(since, t, 4.0, home(), near(0.031), "holding", True, True,
+                                    pm.returning(worker, pending))
+        if due:  # as on_joints does. MoveIt does not answer in 0.1 s.
+            due_at.append(t)
+            worker = threading.Thread(target=pm.return_home, args=(
+                FakePause(up=False), move, "goal", stop, pending))
+            worker.start()
+            worker.join()
+        if t == 10.0:
+            replies[0].set_result(handle)  # MoveIt accepts the first goal late
+    # 6 s of idle pass while the first reply is pending. The next return comes a full limit
+    # after the late accept was cancelled.
+    assert due_at == [4.0, 14.25] and len(replies) == 2 and handle.cancelled
