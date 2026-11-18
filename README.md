@@ -141,10 +141,12 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
 2. Bring up `can0` at 1 Mbit/s. For a native CAN adapter, run this command.
 
     ```sh
-    sudo ip link set can0 type can bitrate 1000000 restart-ms 100 && sudo ip link set up can0
+    sudo ip link set can0 type can bitrate 1000000 && sudo ip link set up can0
     ```
 
-    `restart-ms` brings the interface back after a bus-off. A bus-off can come, for example, after frames that no powered motor acknowledged.
+    Do not add `restart-ms`. A gs_usb adapter such as candleLight does not support it, and the command then stops after `ip link set can0 down` and leaves `can0` down.
+
+    A bus-off can come, for example, after frames that no powered motor acknowledged. To see a bus-off, run `ip -details link show can0`. It shows `BUS-OFF`. To clear it, run `sudo ip link set can0 down`, then bring `can0` up with the same command.
 
 3. Support the arm with your hand or a stand. Do this before the first launch and before every release. Now release the emergency stop to power the motors. No motor is enabled yet. Keep a hand near the emergency stop.
 4. Ask the daemon for its status. A daemon can already hold the arm.
