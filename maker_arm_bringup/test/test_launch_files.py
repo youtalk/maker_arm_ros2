@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 
 import pytest
+import yaml
 from launch import LaunchContext
 from launch.actions import DeclareLaunchArgument
 from launch_ros.actions import Node
@@ -44,6 +45,23 @@ def test_move_group_publishes_the_srdf_but_not_the_urdf():
     assert params["publish_robot_description_semantic"] is True
     # robot_state_publisher owns /robot_description.
     assert "publish_robot_description" not in params
+
+
+def srdf_of(node):
+    for p in node._Node__parameters:
+        for key, value in p.items():
+            if "".join(t.text for t in key) == "robot_description_semantic":
+                return yaml.safe_load("".join(t.text for t in value))  # launch stores it as YAML
+    raise KeyError(node.node_executable)
+
+
+def test_only_servo_lets_the_fingers_touch_the_desk():
+    nodes = [e for e in load("stack").generate_launch_description().entities if isinstance(e, Node)]
+    by_exe = {n.node_executable: n for n in nodes}
+    pairs = [f'link1="desk_link" link2="gripper_{side}"' for side in ("left", "right")]
+    assert all(p in srdf_of(by_exe["servo_node"]) for p in pairs)
+    for exe in ("move_group", "park_monitor", "rviz2"):
+        assert not any(p in srdf_of(by_exe[exe]) for p in pairs)
 
 
 def real_ctx(**over):
