@@ -67,12 +67,13 @@ def test_go_home_checks_that_the_arm_arrived():
     go_home = load()
     home = {"link_002_joint": 0.0, "link_003_joint": -0.1}
     closed = {"gripper_left_joint": 0.003}
-    near = {"link_002_joint": 0.019, "link_003_joint": -0.1, "gripper_left_joint": 0.0034}
+    near = {"link_002_joint": 0.019, "link_003_joint": -0.1, "gripper_left_joint": 0.0049}
     go_home.check_arrival(home, closed, near)
     with pytest.raises(RuntimeError, match=r"link_003_joint stopped 0\.0210 rad .*limit 0\.02 rad"):
         go_home.check_arrival(home, closed, {**near, "link_003_joint": -0.121})
-    with pytest.raises(RuntimeError, match=r"gripper_left_joint stopped 0\.0006 m .*limit 0\.0005 m"):
-        go_home.check_arrival(home, closed, {**near, "gripper_left_joint": 0.0036})
+    go_home.check_arrival(home, closed, {**near, "gripper_left_joint": 0.0014})  # past the goal
+    with pytest.raises(RuntimeError, match=r"gripper_left_joint stopped 0\.0021 m .*limit 0\.002 m"):
+        go_home.check_arrival(home, closed, {**near, "gripper_left_joint": 0.0051})
     with pytest.raises(RuntimeError, match="gripper_left_joint stopped nan"):
         go_home.check_arrival(home, closed, {"link_002_joint": 0.0, "link_003_joint": -0.1})
 

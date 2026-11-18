@@ -46,7 +46,9 @@ SPIN_S = 0.1
 MAX_TRAVEL_RAD = 0.6
 SETTLE_S = 1.0  # the gripper goal ends within its 2 mm goal_tolerance, the jaw is still closing
 ARRIVED_RAD = 0.02
-ARRIVED_M = 0.0005
+# The gripper controller's own goal_tolerance (ros2_controllers.yaml). The jaw can close past
+# its goal against its closing cap: on the real arm the closed goal 0.0020 m ended at 0.0014 m.
+ARRIVED_M = 0.002
 
 
 def state(srdf, group, name):
