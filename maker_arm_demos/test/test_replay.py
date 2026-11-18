@@ -11,7 +11,7 @@ from maker_arm_demos.replay import (
 
 ARM = [f'link_00{i}_joint' for i in range(2, 8)]
 READY = [0.0, -1.5518, 1.6901, -1.038, 0.0, 0.0]  # the SRDF's ready
-OPEN = 0.0405171  # the SRDF's open
+OPEN = 0.0398135  # the SRDF's open
 with open(os.path.join(get_package_share_directory('maker_arm_moveit_config'), 'config',
                        'joint_limits.yaml')) as f:
     JOINTS = yaml.safe_load(f)['joint_limits']

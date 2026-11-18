@@ -46,7 +46,7 @@ def generate_launch_description():
     # The shipped profile is the vendor calibration at caps 0.5.
     defaults = {"profile": os.path.join(DAEMON, "real_profile_caps05.json"),
                 "dynamics": os.path.join(DAEMON, "dynamics_urdf.json"),
-                "params": "", "gripper_map": "", "interface": "can0", "residual": "",
+                "params": "", "gripper_map": os.path.join(DAEMON, "gripper_map.txt"), "interface": "can0", "residual": "",
                 "rt": "false", "persist": "false", "rviz": "false",
                 "wrist_camera": "", "head_camera": ""}
     return LaunchDescription([DeclareLaunchArgument(k, default_value=v) for k, v in defaults.items()]

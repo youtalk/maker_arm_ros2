@@ -79,7 +79,8 @@ def test_real_launch_defaults_are_the_shipped_caps05_profile_and_dynamics_and_no
          if isinstance(e, DeclareLaunchArgument)}
     assert "".join(t.text for t in d["profile"]).endswith("config/daemon/real_profile_caps05.json")
     assert "".join(t.text for t in d["dynamics"]).endswith("dynamics_urdf.json")
-    assert all("".join(t.text for t in d[k]) == "" for k in ("params", "gripper_map", "residual"))
+    assert all("".join(t.text for t in d[k]) == "" for k in ("params", "residual"))
+    assert "".join(t.text for t in d["gripper_map"]).endswith("config/daemon/gripper_map.txt")
     assert "".join(t.text for t in d["interface"]) == "can0"
 
 

@@ -66,10 +66,10 @@
     <!-- open and closed sit 0.5 mm inside the jaw limits of joint_limits.yaml. An empty close
          lands a few um past its target, and MoveIt refuses to plan from outside the limits. -->
     <group_state name="open" group="gripper">
-        <joint name="gripper_left_joint" value="0.0405171"/>
+        <joint name="gripper_left_joint" value="0.0398135"/>
     </group_state>
     <group_state name="closed" group="gripper">
-        <joint name="gripper_left_joint" value="0.0030216"/>
+        <joint name="gripper_left_joint" value="0.0020056"/>
     </group_state>
     <!--END EFFECTOR: Purpose: Represent information about an end effector.-->
     <end_effector name="gripper" parent_link="link_007" group="gripper" parent_group="arm"/>

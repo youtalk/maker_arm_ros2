@@ -3,19 +3,19 @@
 
 Arm joint i of a profile is URDF joint link_00{i+2}_joint. The position range of each arm
 joint is the intersection of the URDF range and every profile's [q_lo + margin, q_hi - margin].
-The gripper gets the same margin in motor radians, mapped to metres through maker-arm-cli's
-provisional grip map, the vendor's preview: a jaw gap of 0 at CLOSED_ANGLE and 2 * JAW_HALF_STROKE
-at OPEN_ANGLE. The jaw closes toward the gripper's q_hi, and gripper_left_joint is half the gap.
-That range is intersected with the URDF range too.
+The gripper gets the same margin in motor radians, mapped to metres through the measured gripper
+map (gripper_map.txt, one line "a,b": gap in m = a * motor angle in rad + b). The jaw closes toward
+the gripper's q_hi, and gripper_left_joint is half the gap. That range is intersected with the
+URDF range too.
 """
 import argparse
 import json
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 ARM = [f"link_00{i}_joint" for i in range(2, 8)]
 GRIPPER = "gripper_left_joint"
-JAW_HALF_STROKE = 0.0524125  # m, as in maker-arm-cli's provisional grip map (files.rs)
-CLOSED_ANGLE, OPEN_ANGLE = 0.006713, -2.078984  # rad, GripMap::provisional (files.rs)
+GRIPPER_MAP = Path(__file__).resolve().parents[2] / "maker_arm_description/config/daemon/gripper_map.txt"
 
 
 def urdf_limits(path):
@@ -40,12 +40,13 @@ def arm_ranges(urdf, profiles, margin):
     return ranges
 
 
-def jaw(angle):
-    """gripper_left_joint in metres at a gripper motor angle."""
-    return JAW_HALF_STROKE * (angle - CLOSED_ANGLE) / (OPEN_ANGLE - CLOSED_ANGLE)
+def gripper_range(urdf, profiles, margin, gripper_map):
+    a, b = (float(x) for x in gripper_map.split(","))
+
+    def jaw(angle):  # gripper_left_joint in metres: half the gap
+        return (a * angle + b) / 2
 
 
-def gripper_range(urdf, profiles, margin):
     lo, hi = urdf[GRIPPER]
     for profile in profiles:
         g = profile["joints"][len(ARM)]
@@ -55,7 +56,7 @@ def gripper_range(urdf, profiles, margin):
     return lo, hi
 
 
-def render(urdf, profiles, margin):
+def render(urdf, profiles, margin, gripper_map):
     lines = [
         "# Written by scripts/limits_from_profiles.py. Do not edit by hand.",
         "default_velocity_scaling_factor: 0.2",
@@ -63,7 +64,7 @@ def render(urdf, profiles, margin):
         "joint_limits:",
     ]
     ranges = arm_ranges(urdf, profiles, margin)
-    ranges[GRIPPER] = gripper_range(urdf, profiles, margin)
+    ranges[GRIPPER] = gripper_range(urdf, profiles, margin, gripper_map)
     for name, (lo, hi) in ranges.items():
         vel, acc = ("0.05", "0.5") if name == GRIPPER else ("2.0", "4.0")
         lines += [
@@ -83,8 +84,9 @@ if __name__ == "__main__":
     ap.add_argument("--urdf", required=True)
     ap.add_argument("--profile", action="append", required=True)
     ap.add_argument("--margin", type=float, default=0.05)
+    ap.add_argument("--gripper-map", default=str(GRIPPER_MAP))
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     profiles = [json.load(open(p)) for p in a.profile]
     with open(a.out, "w", newline="\n") as f:
-        f.write(render(urdf_limits(a.urdf), profiles, a.margin))
+        f.write(render(urdf_limits(a.urdf), profiles, a.margin, Path(a.gripper_map).read_text().strip()))

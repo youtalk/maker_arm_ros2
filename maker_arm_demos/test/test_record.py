@@ -8,7 +8,7 @@ def test_a_record_round_trips(tmp_path):
         joint_names=ARM,
         points=[(0.0, [0.0, -1.5518, 1.6901, -1.038, 0.0, 0.0]),
                 (0.1, [0.01, -1.5418, 1.6801, -1.028, 0.01, 0.02])],
-        grips=[(0.0, 0.0405171), (0.1, 0.014)],
+        grips=[(0.0, 0.0398135), (0.1, 0.014)],
     )
     path = tmp_path / 'record.json'
     record.save(path)

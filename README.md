@@ -179,7 +179,7 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
     ros2 launch maker_arm_bringup torque_off.launch.py
     ```
 
-    Move each joint by hand. If RViz moves the joint the other way, the direction is wrong. If the pose does not match the arm, the offset is wrong. The jaw follows the gripper map. Add `profile:=<file>` for another profile. Add `gripper_map:=<file>` for a file with one line `a,b`. Without it, the CLI default map applies. If a joint reads nan, the view names that joint once a second. The CLI also prints the fault text of a motor that reports a fault.
+    Move each joint by hand. If RViz moves the joint the other way, the direction is wrong. If the pose does not match the arm, the offset is wrong. The jaw follows the gripper map. Add `profile:=<file>` for another profile. Add `gripper_map:=<file>` for a file with one line `a,b`. Without it, the CLI default map applies. `real.launch.py` uses the measured map by default. If a joint reads nan, the view names that joint once a second. The CLI also prints the fault text of a motor that reports a fault.
 
     Start each hand motion from the folded rest. The table gives one motion for each joint and the change of the joint value. To see the values, run `ros2 topic echo /joint_states` in a second terminal. If a value changes the other way, the direction of that joint is wrong. Stop, and do not launch.
 
@@ -264,12 +264,12 @@ Use these values to connect Conduit.
 | Joint states | `/joint_states` |
 | Gripper action | `/gripper_controller/gripper_cmd` |
 | Gripper joint | `gripper_left_joint` |
-| Gripper open | 0.0405171 m per jaw |
-| Gripper closed | 0.0030216 m per jaw |
+| Gripper open | 0.0398135 m per jaw |
+| Gripper closed | 0.0020056 m per jaw |
 | Wrist camera | `/wrist_camera/image_raw/compressed` |
 | Head camera (real arm only) | `/head_camera/image_raw/compressed` |
 
-The open and closed values come from the vendor's gripper preview map. Measure them on your arm before you rely on them.
+The open and closed values come from the measured gripper map in `maker_arm_description/config/daemon/gripper_map.txt`. The file has one line `a,b`: the jaw gap in m is `a` times the gripper motor angle in rad plus `b`. The values are `a = -0.050667` and `b = -0.001733`. They are a least-squares line through six calipers measurements of one arm, forced through the closed point. The points (motor angle in rad, gap in mm) were (-0.0342, 0), (-0.3953, 14), (-0.5242, 20), (-0.9022, 40), (-1.2082, 60) and (-1.7732, 92). The jaw is a crank and a rail, so the real gap is not linear in the angle. The line is off by up to 4.8 mm in the middle of the stroke. It is exact at the closed end. The gripper limit keeps 0.05 rad of margin from the motor limit, so the open jaw gap is 79.6 mm and not 92 mm. Measure your own arm if you need more.
 
 On the real arm, run `ros2 run maker_arm_bringup go_home` once after the launch, before you use Conduit's poses. Conduit's poses go through MoveIt, and MoveIt cannot plan from the rest pose after enable.
 
