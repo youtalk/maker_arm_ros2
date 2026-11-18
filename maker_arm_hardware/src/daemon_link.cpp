@@ -27,7 +27,7 @@ namespace
 // Ubuntu's apt cargo-1.85 cannot fetch a git URL (its system libgit2 is too old).
 const char * const kInstall =
   "git clone https://github.com/youtalk/maker-arm-rs && "
-  "git -C maker-arm-rs checkout f7586300d5ef3c1c2c49d61fe6e671807da647df && "
+  "git -C maker-arm-rs checkout 30137ece2be8d76af7e0f3eef14be0a344aafc4e && "
   "cargo install --locked --path maker-arm-rs/crates/maker-arm-cli";
 // INITIAL: V1 (task 11) streams 100 Hz on SimArm through it, V2 measures the reply latency
 constexpr std::chrono::milliseconds kReplyWait{50};
