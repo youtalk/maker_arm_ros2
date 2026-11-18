@@ -9,6 +9,7 @@ The profiles and `dynamics_urdf.json` come from `maker-arm-cli export` of maker-
 - `sim_profile.json` is the profile of the daemon's built-in simulated arm.
 - `dynamics_urdf.json` holds the arm's own URDF model. Its `armature` is `null` on purpose. `provenance` holds the SHA-256 of the URDF.
 - `vendor_calibration.json` is the calibration of an arm in the vendor zero (folded against the base, gripper fully closed). It comes from the vendor's gravity convention: motor 5 turns against `link_006_joint`.
+- `gripper_map.txt` is the measured gripper map, one line `a,b`: jaw gap in m = a * motor angle in rad + b. The README in the repository root has the measurements.
 - `real_profile_caps05.json` and `real_profile_nominal.json` are the real-arm profiles at caps 0.5 and 1.0. The MuJoCo plant on `vcan0` runs with the nominal one.
 
 For an arm with another zero, make a profile from its own calibration: `maker-arm-cli export --calibration CAL.json --caps 0.5 --out <path>`. The README in the repository root explains the steps.
