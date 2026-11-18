@@ -1,7 +1,9 @@
 import csv
 import importlib.machinery
 import importlib.util
+import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import xacro
@@ -209,3 +211,148 @@ def test_a_failed_release_is_no_park(tmp_path):
     Path(cli[0]).write_text(Path(cli[0]).read_text().replace(
         "exit 0", '[ "$1" = release ] && echo "release failed: X" >&2 && exit 1\nexit 0'))
     assert load().park(cli) == (False, True, "park failed: release failed: X")
+
+
+def idle(stream, limit=4.0, mode="holding"):
+    """Feed (t, position, still, busy) samples to idle_return. Return the times it was due."""
+    pm, h, since, due_at = load(), home(), None, []
+    for t, p, still, busy in stream:
+        since, due = pm.idle_return(since, t, limit, h, p, mode, still, busy)
+        if due:
+            due_at.append(t)
+    return due_at
+
+
+def stays(n, position=None, still=True, busy=lambda k: False):
+    """Samples every 0.25 s from 0 s, by default 0.031 rad from home: just outside its band."""
+    return [(k / 4, position or near(0.031), still, busy(k)) for k in range(n)]
+
+
+def test_an_idle_time_below_the_limit_gives_no_return():
+    assert idle(stays(16)) == []  # 3.75 s of 4 s
+
+
+def test_a_still_arm_away_from_home_returns_after_the_limit_and_then_counts_again():
+    assert idle(stays(40)) == [4.0, 8.25]
+
+
+@pytest.mark.parametrize("still, busy", [(True, True), (False, False)])
+def test_a_twist_a_goal_or_a_move_restarts_the_count(still, busy):
+    stream = stays(28)
+    stream[8] = (2.0, stream[8][1], still, busy)
+    assert idle(stream) == [6.25]
+
+
+@pytest.mark.parametrize("mode", ["released", "fault", "refused", None])
+def test_a_daemon_that_is_not_holding_or_following_gives_no_return(mode):
+    assert idle(stays(40), mode=mode) == []
+    assert idle(stays(40), mode="following") == [4.0, 8.25]
+
+
+def test_at_home_the_park_acts_and_not_the_return():
+    assert idle(stays(40, near(0.03))) == []
+
+
+def test_idle_home_s_0_turns_the_return_off():
+    assert idle(stays(40), limit=0.0) == []
+
+
+def test_the_return_is_one_pilz_ptp_goal_to_the_srdf_home():
+    r = load().move_goal(home()).request
+    assert (r.group_name, r.pipeline_id, r.planner_id) == (
+        "arm", "pilz_industrial_motion_planner", "PTP")
+    assert (r.max_velocity_scaling_factor, r.max_acceleration_scaling_factor) == (0.1, 0.1)
+    (goal,) = r.goal_constraints
+    assert {c.joint_name: c.position for c in goal.joint_constraints} == home()
+    assert {(c.tolerance_above, c.tolerance_below) for c in goal.joint_constraints} == {
+        (0.01, 0.01)}
+
+
+def test_the_servo_pause_is_go_homes():
+    loader = importlib.machinery.SourceFileLoader("go_home", str(PKG / "scripts" / "go_home"))
+    go_home = importlib.util.module_from_spec(importlib.util.spec_from_loader("go_home", loader))
+    loader.exec_module(go_home)
+    pm = load()
+    assert (pm.SERVO_PAUSE, pm.PAUSE_WAIT_S) == (go_home.SERVO_PAUSE, go_home.PAUSE_WAIT_S)
+
+
+class Done:
+    """A future that is done, with a result."""
+
+    def __init__(self, result):
+        self.value = result
+
+    def done(self):
+        return True
+
+    def result(self):
+        return self.value
+
+
+class Never:
+    """A future that never completes."""
+
+    def done(self):
+        return False
+
+
+class FakePause:
+    def __init__(self, up, reply=None):
+        self.up, self.reply, self.calls = up, reply, 0
+
+    def wait_for_service(self, timeout_sec):
+        return self.up
+
+    def call_async(self, request):
+        assert request.data
+        self.calls += 1
+        return Done(self.reply) if self.reply else Never()
+
+
+class FakeMove:
+    """A MoveGroup client whose goal is accepted and then runs until it is cancelled. A twist
+    arrives once the goal is out."""
+
+    def __init__(self, stop):
+        self.stop, self.sent, self.cancelled = stop, [], False
+
+    def wait_for_server(self, timeout_sec):
+        return True
+
+    def send_goal_async(self, goal):
+        self.sent.append(goal)
+        self.stop.set()
+        move = self
+
+        class Handle:
+            accepted = True
+
+            def get_result_async(self):
+                return Never()
+
+            def cancel_goal_async(self):
+                move.cancelled = True
+
+        return Done(Handle())
+
+
+def test_a_twist_during_the_return_cancels_the_goal():
+    pm = load()
+    stop = threading.Event()
+    move = FakeMove(stop)
+    # Without Servo the goal goes out.
+    assert pm.return_home(FakePause(up=False), move, "goal", stop) == (
+        False, "return home cancelled: a twist arrived")
+    assert move.sent == ["goal"] and move.cancelled
+
+
+def test_a_refused_or_late_servo_pause_sends_no_goal(monkeypatch):
+    pm = load()
+    monkeypatch.setattr(pm, "PAUSE_WAIT_S", 0.1)
+    stop = threading.Event()
+    move = FakeMove(stop)
+    refused = FakePause(up=True, reply=SimpleNamespace(success=False, message="no"))
+    for pause in (refused, FakePause(up=True)):
+        returned, line = pm.return_home(pause, move, "goal", stop)
+        assert not returned and line.startswith("not returning home") and pause.calls == 1
+    assert move.sent == []

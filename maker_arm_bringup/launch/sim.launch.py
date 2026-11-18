@@ -32,6 +32,7 @@ def generate_launch_description():
             "persist": LaunchConfiguration("persist"),
             "rviz": LaunchConfiguration("rviz"),
             "auto_park": LaunchConfiguration("auto_park"),
+            "idle_home_s": LaunchConfiguration("idle_home_s"),
         }.items())
 
     def on_stdout(event):
@@ -44,6 +45,8 @@ def generate_launch_description():
         # Ruling R32: off by default. The plant has no heat, and on vcan0 a release ends the
         # daemon, so a park ends the stack's arm.
         DeclareLaunchArgument("auto_park", default_value="false"),
+        # Ruling R42 returns an idle arm home on the real arm. In the sim it is off.
+        DeclareLaunchArgument("idle_home_s", default_value="0.0"),
         DeclareLaunchArgument(
             "scene", default_value=os.path.join(share("maker_arm_mujoco"), "config", "scene.yaml")),
         DeclareLaunchArgument("seed", default_value="0"),

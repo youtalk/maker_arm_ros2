@@ -288,6 +288,8 @@ After an enable, `park_monitor` parks only after the arm left `home` and came ba
 
 Then `park_monitor` asks the daemon for its mode. If the daemon is `holding` or `following`, it runs `maker-arm-cli release --yes` and logs `parked: torque off at home`. The release takes about 2 s, because the daemon ramps the torque down before it disables the motors. If the release fails, it logs why and tries again every 5 s. During the ramp, the arm sinks a few degrees onto its folded rest. A park also turns off the gripper motor, so an object in the jaw drops. The rule applies to each path to `home`: MoveIt, Conduit and `go_home`. To stop the park, add `auto_park:=false` to the launch.
 
+`park_monitor` also returns an idle arm to `home`, so that the arm does not hold a pose for long. Idle means that the daemon is `holding` or `following` and an arm joint is more than 0.03 rad from `home`. Also, the arm is still, no controller has a goal, and Servo gets no twist that moves. After 30 s of idle, `park_monitor` pauses Servo as `go_home` does. Then it sends one MoveIt goal to `home`: Pilz PTP at 0.1 of the speed and acceleration limits. At `home`, the park rule above parks the arm. A twist that moves cancels the return. After a failed or cancelled return, the next try comes after another 30 s of idle. The return is on in `real.launch.py` (30 s) and off in `sim.launch.py`. To change the time, add `idle_home_s:=<seconds>` to the launch. `idle_home_s:=0` turns the return off.
+
 After a park on the real arm, the daemon stays up in mode `released`. It reads the motors at 5 Hz, so `/joint_states` and RViz stay live. The plugin sends no command to a released daemon.
 
 To use the arm again, wake it. You do not launch again.

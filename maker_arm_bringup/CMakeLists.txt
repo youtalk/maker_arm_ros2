@@ -15,11 +15,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_torque_off_view test/test_torque_off_view.py)
   ament_add_pytest_test(test_park_monitor test/test_park_monitor.py)
   ament_add_pytest_test(test_wake test/test_wake.py)
-  # V1 on SimArm. maker-arm-cli must be on PATH. ctest runs the two one at a time, and both
-  # use the default sim daemon socket.
+  # V1 and the idle return on SimArm. maker-arm-cli must be on PATH. ctest runs them one at a
+  # time, and all use the default sim daemon socket.
   find_package(launch_testing_ament_cmake REQUIRED)
   add_launch_test(test/test_v1_simarm.py TIMEOUT 600)
   ament_add_pytest_test(test_v1_hold test/test_v1_hold.py TIMEOUT 600)
+  add_launch_test(test/test_idle_home.py TIMEOUT 300)
 endif()
 
 ament_package()

@@ -24,20 +24,33 @@ robot_description.
 
 On a real interface the daemon then stays up, released, and the joint states stay live. On sim
 and vcan a release ends the daemon.
+
+The idle return (ruling R42) brings the arm to `home`, so that it does not hold a pose for long.
+The parameter idle_home_s sets the idle time, and 0 turns the return off. It applies while the
+daemon is holding or following, an arm joint is more than NEAR_RAD from `home`, the arm is still
+by the speed rule above, and there is no goal and no twist that moves. After idle_home_s of
+that, it pauses Servo the way go_home does, then sends one MoveGroup goal to the SRDF's `home`.
+A twist that moves cancels the goal. Any return starts the idle count again, so a failed return
+is tried again after another full idle_home_s. At `home`, the park rule takes over.
 """
 
 import json
 import subprocess
 import sys
+import threading
 import time
 import xml.etree.ElementTree as ET
 
 import rclpy
 from action_msgs.msg import GoalStatus, GoalStatusArray
 from geometry_msgs.msg import TwistStamped
+from moveit_msgs.action import MoveGroup
+from moveit_msgs.msg import Constraints, JointConstraint, MoveItErrorCodes
+from rclpy.action import ActionClient
 from rclpy.executors import ExternalShutdownException
 from rclpy.qos import DurabilityPolicy, QoSProfile
 from sensor_msgs.msg import JointState
+from std_srvs.srv import SetBool
 
 # The owner's rule (spec 6.9).
 NEAR_RAD = 0.03  # also go_home's ARRIVED_RAD (ruling R37)
@@ -61,6 +74,19 @@ ACTIVE = (GoalStatus.STATUS_ACCEPTED, GoalStatus.STATUS_EXECUTING, GoalStatus.ST
 # The CLI's own read timeout. A release replies after its 2 s torque ramp (maker-arm-rs R36),
 # and the daemon reports holding until then.
 CLI_WAIT_S = 10.0
+
+# The idle return (ruling R42).
+MOVE = "/move_action"
+SCALING = 0.1  # velocity and acceleration
+GOAL_TOL_RAD = 0.01
+PLAN_S = 5.0
+MOVE_WAIT_S = 10.0  # for the MoveGroup action server, and again for its goal reply
+# The longest PTP at SCALING, 5.4 rad of J1 at 0.2 rad/s, takes about 28 s.
+RESULT_WAIT_S = 60.0
+SPIN_S = 0.05
+# go_home's twins (ruling R41): an unpaused Servo streams hold points that override the goal.
+SERVO_PAUSE = "/servo_node/pause_servo"
+PAUSE_WAIT_S = 2.0  # for the pause service, and again for its reply
 
 
 def home_of(srdf):
@@ -132,6 +158,86 @@ class Rule:
         return True
 
 
+def idle_return(since, now, limit, home, position, mode, still, busy):
+    """The idle rule (ruling R42). Return (since, due).
+
+    since is when the arm started to idle away from home, or None. The arm idles while the daemon
+    is holding or following, an arm joint is more than NEAR_RAD from home, the arm is still and
+    nothing is busy. due is True after limit s of idle, and then the count starts again. A limit
+    of 0 turns the rule off.
+    """
+    nan = float("nan")  # a missing joint is never away
+    away = any(abs(position.get(j, nan) - q) > NEAR_RAD for j, q in home.items())
+    if limit <= 0 or mode not in HOLDING or not still or busy or not away:
+        return None, False
+    since = now if since is None else since
+    return (None, True) if now - since >= limit else (since, False)
+
+
+def move_goal(joints):
+    """Return a MoveGroup goal that moves the arm to {joint: value} with Pilz PTP."""
+    goal = MoveGroup.Goal()
+    r = goal.request
+    r.group_name, r.pipeline_id, r.planner_id = "arm", "pilz_industrial_motion_planner", "PTP"
+    r.num_planning_attempts, r.allowed_planning_time = 1, PLAN_S
+    r.max_velocity_scaling_factor = r.max_acceleration_scaling_factor = SCALING
+    r.goal_constraints = [Constraints(joint_constraints=[
+        JointConstraint(joint_name=j, position=q, tolerance_above=GOAL_TOL_RAD,
+                        tolerance_below=GOAL_TOL_RAD, weight=1.0) for j, q in joints.items()])]
+    # Plan from the current state in the current scene.
+    r.start_state.is_diff = True
+    goal.planning_options.planning_scene_diff.is_diff = True
+    goal.planning_options.planning_scene_diff.robot_state.is_diff = True
+    return goal
+
+
+def wait(future, timeout, stop=None):
+    """Return the result of a future that the executor completes, or None after timeout s or
+    once stop is set. Only for a thread other than the executor's."""
+    deadline = time.monotonic() + timeout
+    while not future.done():
+        if time.monotonic() > deadline or (stop is not None and stop.is_set()):
+            return None
+        time.sleep(SPIN_S)
+    return future.result()
+
+
+def pause_servo(client):
+    """Pause Servo. Return None when it paused or there is no Servo, else why not.
+
+    The twin of go_home's pause_servo, for a thread of its own.
+    """
+    if not client.wait_for_service(timeout_sec=PAUSE_WAIT_S):
+        return None
+    reply = wait(client.call_async(SetBool.Request(data=True)), PAUSE_WAIT_S)
+    if reply is None:
+        return f"no {SERVO_PAUSE} reply in {PAUSE_WAIT_S} s"
+    return None if reply.success else f"{SERVO_PAUSE} did not pause Servo ({reply.message})"
+
+
+def return_home(pause, move, goal, stop):
+    """Pause Servo, then send the MoveGroup goal and wait for its result. A set stop (a twist)
+    cancels the goal. Return (returned, the line to log). It blocks, so run it in a thread."""
+    if why := pause_servo(pause):
+        return False, f"not returning home: {why}"
+    if stop.is_set():
+        return False, "not returning home: a twist arrived"
+    if not move.wait_for_server(timeout_sec=MOVE_WAIT_S):
+        return False, f"not returning home: no {MOVE} action server in {MOVE_WAIT_S} s"
+    handle = wait(move.send_goal_async(goal), MOVE_WAIT_S)
+    if handle is None or not handle.accepted:
+        return False, "return home failed: MoveIt did not accept the goal"
+    res = wait(handle.get_result_async(), RESULT_WAIT_S, stop)
+    if res is None:
+        handle.cancel_goal_async()
+        why = "a twist arrived" if stop.is_set() else f"no result in {RESULT_WAIT_S} s"
+        return False, f"return home cancelled: {why}"
+    code = res.result.error_code.val
+    if res.status == GoalStatus.STATUS_SUCCEEDED and code == MoveItErrorCodes.SUCCESS:
+        return True, "returned home"
+    return False, f"return home failed: status {res.status}, MoveIt error code {code}"
+
+
 def moving(twist):
     """Return True for a Twist with a component above TWIST_MIN."""
     lin, ang = twist.linear, twist.angular
@@ -195,10 +301,20 @@ def main():
     except (ET.ParseError, ValueError) as e:
         log.error(f"park_monitor: {e}")
         return 1
+    node.declare_parameter("idle_home_s", 0.0)  # read on each sample, so it can change live
     rule = Rule(home, time.monotonic())
     goals = {}
     twist = [False]
     mode = [None]  # the last mode the daemon reported
+    pause = node.create_client(SetBool, SERVO_PAUSE)
+    move = ActionClient(node, MoveGroup, MOVE)
+    idle = [None]  # when the arm started to idle away from home
+    stop = threading.Event()  # a twist during a return
+    worker = [None]  # the thread of the last return
+
+    def go_back():
+        returned, line = return_home(pause, move, move_goal(home), stop)
+        (log.info if returned else log.warning)(line)
 
     def on_poll():
         m = poll_mode(cli)
@@ -215,16 +331,28 @@ def main():
         busy = any(goals.values()) or twist[0]
         twist[0] = False
         now = time.monotonic()
-        if rule.step(now, dict(zip(msg.name, msg.position)), busy):
+        position = dict(zip(msg.name, msg.position))
+        if rule.step(now, position, busy):
             released, retry, line = park(cli)
             if released:
                 mode[0] = "released"
             elif retry:
                 rule.failed(now)
             (log.info if released else log.warning)(line)
+        limit = node.get_parameter("idle_home_s").value
+        returning = worker[0] is not None and worker[0].is_alive()
+        idle[0], due = idle_return(idle[0], now, limit, home, position, mode[0], rule.still,
+                                   busy or returning)
+        if due:
+            log.info(f"idle for {limit:g} s away from home: returning home")
+            stop.clear()
+            worker[0] = threading.Thread(target=go_back, daemon=True)
+            worker[0].start()
 
     def on_twist(msg):
-        twist[0] = twist[0] or moving(msg.twist)
+        if moving(msg.twist):
+            twist[0] = True
+            stop.set()
 
     # The action servers publish their status transient local, keep last 1.
     latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
