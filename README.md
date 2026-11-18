@@ -82,7 +82,7 @@ The MuJoCo plant answers on a virtual CAN bus as the arm's seven motors. The dae
     ros2 launch maker_arm_bringup sim.launch.py rviz:=true
     ```
 
-The plant publishes the wrist camera on `/wrist_camera/image_raw/compressed`. Launch arguments are `scene` (a scene file), `seed` (the scene perturbation), `profile` (the daemon's profile) and `start` (the start pose of the plant, `ready` or `rest`).
+The plant publishes the wrist camera on `/wrist_camera/image_raw/compressed`. Launch arguments are `scene` (a scene file), `seed` (the scene perturbation) and `profile` (the daemon's profile). `start` sets the start pose of the plant, `ready` or `rest`.
 
 The plant reports motor angles as the real arm does, with motor 5 turned against the URDF joint. So the daemon loads a shipped profile with the vendor calibration. The default is `real_profile_nominal.json`. The calibration runs in simulation before it runs on the arm.
 
@@ -211,7 +211,7 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
    The arm parks at `home` (see [Heat, park and wake](#heat-park-and-wake)). After step 10, the arm stays enabled at `home` for 60 s, or until it moves away and comes back.
 8. If the launch says that no daemon answered, read the log that the message names. To find the process that holds the CAN bus, run `ss -xlp | grep maker-arm-bus-can0`. A daemon can hold the arm with no socket. Support the arm before you stop that process, because the arm then drops.
 9. Enabling the motors holds the measured pose. The daemon also enables a joint that rests up to 0.35 rad outside its soft limits. It then pulls that joint back inside the limits, so that joint can move by up to 0.35 rad. In the folded rest, J2 and J3 sit just outside their limits, so they move a few degrees. Keep the arm supported until the launch finishes.
-10. Bring the arm into MoveIt's planning range. After enable, J2, J3 and the jaw rest just outside that range, and MoveIt refuses to plan from there. This command moves the arm to `home` in 5 s and closes the jaw, through the controllers and not through MoveIt. It checks no collisions, so run it only from the folded rest, right after enable. It refuses to move when a joint is more than 0.6 rad from `home`, for example from a raised pose.
+10. Bring the arm into MoveIt's planning range. After enable, J2, J3 and the jaw rest just outside that range, and MoveIt refuses to plan from there. This command moves the arm to `home` in 5 s and closes the jaw, through the controllers and not through MoveIt. It checks no collisions, so run it only from the folded rest, right after enable. If a joint is more than 0.6 rad from `home`, for example in a raised pose, it refuses to move.
 
     ```sh
     ros2 run maker_arm_bringup go_home
@@ -251,7 +251,7 @@ If a motor reports a fault, the daemon holds the arm. A gripper fault also disab
 
 1. Support the arm.
 2. Press and release the emergency stop. This cuts the motor power and clears the fault. The vendor's `maker-arm scan --clear-faults` also clears it. The daemon keeps holding.
-3. Release the arm with `ros2 run maker_arm_bringup release`. The daemon stays in its fault hold until you do this. If `release` names motors that did not confirm the disable, press the emergency stop.
+3. Release the arm with `ros2 run maker_arm_bringup release`. The daemon stays in its fault hold until you do this. If `release` names motors that did not answer the disable, press the emergency stop.
 4. Find the cause of the fault. Then start the real-arm steps again from step 4.
 
 ### End a released daemon
@@ -277,7 +277,7 @@ A released daemon has no torque to hold, and it keeps the bus lock until it ends
 
 J3 (`link_004_joint`) holds the forearm against gravity at `home` and at `work`. On the real arm, J3 went from 25 to 70 degrees C in 21 minutes of holding, and the run stopped. So that the motors can cool, the arm parks at `home`. Park means that the daemon turns the torque off.
 
-`park_monitor` parks the arm. `real.launch.py` starts it. `sim.launch.py` starts it only with `auto_park:=true`. It parks the arm when all of these conditions stay true for 3 s:
+`park_monitor` parks the arm. `real.launch.py` starts it. `sim.launch.py` starts it only with `auto_park:=true`. If all of these conditions stay true for 3 s, it parks the arm:
 
 - Each arm joint is within 0.03 rad of `home`.
 - Each arm joint moves slower than 0.01 rad/s. The speed comes from the joint positions, because the velocity that a still motor reports can be 0.011 rad/s.
@@ -294,14 +294,14 @@ After a park on the real arm, the daemon stays up in mode `released`. It reads t
 
 To use the arm again, wake it. You do not launch again.
 
-1. Fold the arm into its rest, if somebody moved it. `go_home` checks no collisions, so it must start from the folded rest. Support the arm.
-2. Run `wake`, and type `ENABLE` when it asks.
+1. If somebody moved the arm, fold it into its rest. `go_home` checks no collisions, so it must start from the folded rest. Support the arm.
+2. Run `wake`. When it asks, type `ENABLE`.
 
     ```sh
     ros2 run maker_arm_bringup wake
     ```
 
-`wake` enables nothing unless the controller manager answers and has both controllers. It refuses unless the daemon is released. A park or a release takes about 2 s, so if `wake` refuses right after a park, wait and run it again. The daemon enables the arm at the measured pose after the checks of the first enable. If a joint is at 70 degrees C or more, the daemon refuses, and the torque stays off. Next, `wake` restarts `arm_controller` and `gripper_controller`. They then hold the measured pose and not the `home` pose from before the park. Last, `wake` runs `go_home`. The arm then stays enabled at `home` for 60 s, or until it moves away and comes back. For another interface, add `--interface <name>`.
+`wake` enables nothing unless the controller manager answers and has both controllers. It refuses unless the daemon is released. A park or a release takes about 2 s. If `wake` refuses right after a park, wait and run it again. The daemon enables the arm at the measured pose after the checks of the first enable. If a joint is at 70 degrees C or more, the daemon refuses, and the torque stays off. Next, `wake` restarts `arm_controller` and `gripper_controller`. They then hold the measured pose and not the `home` pose from before the park. Last, `wake` runs `go_home`. The arm then stays enabled at `home` for 60 s, or until it moves away and comes back. For another interface, add `--interface <name>`.
 
 If you launch the stack while the daemon is released, the stack starts with no torque. Run `wake` to enable the arm.
 
@@ -335,11 +335,15 @@ Use these values to connect Conduit.
 | Wrist camera | `/wrist_camera/image_raw/compressed` |
 | Head camera (real arm only) | `/head_camera/image_raw/compressed` |
 
-The open and closed values come from the measured gripper map in `maker_arm_description/config/daemon/gripper_map.txt`. The file has one line `a,b`: the jaw gap in m is `a` times the gripper motor angle in rad plus `b`. The values are `a = -0.050667` and `b = -0.001733`. They are a least-squares line through six calipers measurements of one arm, forced through the closed point. The points (motor angle in rad, gap in mm) were (-0.0342, 0), (-0.3953, 14), (-0.5242, 20), (-0.9022, 40), (-1.2082, 60) and (-1.7732, 92). The jaw is a crank and a rail, so the real gap is not linear in the angle. The line is off by up to 4.8 mm in the middle of the stroke. It is exact at the closed end. The gripper limit keeps 0.05 rad of margin from the motor limit, so the open jaw gap is 79.6 mm and not 92 mm. Measure your own arm if you need more.
+The open and closed values come from the measured gripper map in `maker_arm_description/config/daemon/gripper_map.txt`. The file has one line `a,b`: the jaw gap in m is `a` times the gripper motor angle in rad plus `b`. The values are `a = -0.050667` and `b = -0.001733`. They are a least-squares line through six calipers measurements of one arm, forced through the closed point. The points (motor angle in rad, gap in mm) were (-0.0342, 0), (-0.3953, 14), (-0.5242, 20), (-0.9022, 40), (-1.2082, 60) and (-1.7732, 92). The jaw is a crank and a rail, so the real gap is not linear in the angle. The line is off by up to 4.8 mm in the middle of the stroke. It is exact at the closed end. The gripper limit keeps 0.05 rad of margin from the motor limit, so the open jaw gap is 79.6 mm and not 92 mm. If you need more, measure your own arm.
 
 On the real arm, run `ros2 run maker_arm_bringup go_home` once after the launch, before you use Conduit's poses. Conduit's poses go through MoveIt, and MoveIt cannot plan from the rest pose after enable. After `go_home`, the arm stays enabled at `home` for 60 s. If the arm parks, run `wake`.
 
 Before you teleoperate, move to `work` or `stand`. Servo halts at `home`, because `home` is a singularity. At `ready`, J4 sits near its limit, so Servo stops a push that turns J4 further down. Servo moves along every axis from `work` and `stand`, but it slows near them: in the simulation, a 1 s push delivered about 20 to 100% of the commanded motion. A push that pitches the tool down turns J4 toward its stop. From `work` or `stand`, Servo stops that push after about 0.2 to 0.3 rad of J4 travel, with the status `JOINT_BOUND`. This stop is the joint limit, not a fault. The real arm is not yet verified.
+
+### Run a Conduit demo alone
+
+[docs/conduit-demo.md](docs/conduit-demo.md) gives the steps for one person who runs a demo session with Conduit on the real arm.
 
 ## Safety rules
 
