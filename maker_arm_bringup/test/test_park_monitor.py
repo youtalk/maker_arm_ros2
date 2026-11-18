@@ -100,6 +100,15 @@ def test_after_an_enable_a_move_away_and_back_arms_the_park():
     assert run(pm.Rule(home(), 0.0), stream) == [12.5 + pm.HOLD_S]
 
 
+def test_only_a_move_past_0_15_rad_arms_the_park():
+    pm = load()
+    for offset, fired in ((0.1, [pm.ARM_S]), (0.16, [10.0 + pm.WINDOW_S + pm.HOLD_S])):
+        stream = quarters(32)  # 8 s at home
+        stream += quarters(8, near(offset), start=32)  # a move of `offset` for 2 s
+        stream += quarters(240, start=40)  # back at home at 10 s
+        assert run(pm.Rule(home(), 0.0), stream) == fired
+
+
 def test_a_new_enable_disarms_the_park_again():
     pm = load()
     rule = armed(pm)

@@ -282,7 +282,7 @@ J3 (`link_004_joint`) holds the forearm against gravity at `home` and at `work`.
 - `arm_controller` and `gripper_controller` have no active goal.
 - Servo gets no twist that moves.
 
-After an enable, `park_monitor` parks only after the arm left `home` and came back, or after 60 s. The move of `go_home` from the folded rest does not count. An enable is the start of the stack or a `wake`. So after `go_home` and after `wake`, the arm stays enabled at `home` for 60 s.
+After an enable, `park_monitor` parks only after the arm left `home` and came back, or after 60 s. Left means that an arm joint went more than 0.15 rad from `home`, so a small hold error does not count. The move of `go_home` from the folded rest does not count. An enable is the start of the stack or a `wake`. So after `go_home` and after `wake`, the arm stays enabled at `home` for 60 s.
 
 Then `park_monitor` asks the daemon for its mode. If the daemon is `holding` or `following`, it runs `maker-arm-cli release --yes` and logs `parked: torque off at home`. If the release fails, it logs why and tries again every 5 s. The arm drops a few degrees onto its folded rest. A park also turns off the gripper motor, so an object in the jaw drops. The rule applies to each path to `home`: MoveIt, Conduit and `go_home`. To stop the park, add `auto_park:=false` to the launch.
 

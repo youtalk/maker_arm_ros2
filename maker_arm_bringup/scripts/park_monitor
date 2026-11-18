@@ -11,7 +11,7 @@ speed comes from the positions over WINDOW_S, not from the velocity field: the M
 in the joint states longer than WINDOW_S starts the HOLD_S count again.
 
 The rule is armed (ruling R32) only after the arm left `home` since the last enable (it reached
-`home`, then an arm joint went more than NEAR_RAD from it), or ARM_S after the last enable. The
+`home`, then an arm joint went more than AWAY_RAD from it), or ARM_S after the last enable. The
 move of `go_home` from the folded rest does not count, so `wake` and `go_home` do not park at
 once, and an idle arm still parks. The last enable is the monitor's start or a daemon mode change
 from released to holding or following. It polls the mode every POLL_S.
@@ -41,6 +41,9 @@ from sensor_msgs.msg import JointState
 
 # The owner's rule (spec 6.9).
 NEAR_RAD = 0.03
+# Arms the park. Wider than NEAR_RAD, so a hold error near NEAR_RAD (J4 held 18 mrad off home on
+# the real arm at caps 0.5) does not count as a move away.
+AWAY_RAD = 0.15
 STILL_RAD_S = 0.01
 HOLD_S = 3.0
 # One position step is 25.14 rad / 65535 = 0.38 mrad, so the speed resolves to 0.8 mrad/s.
@@ -113,7 +116,7 @@ class Rule:
             self.window = (now, position)
         off = [abs(position.get(j, nan) - q) for j, q in self.home.items()]
         near = all(d <= NEAR_RAD for d in off)
-        self.away = self.away or (self.reached and any(d > NEAR_RAD for d in off))
+        self.away = self.away or (self.reached and any(d > AWAY_RAD for d in off))
         self.reached = self.reached or near
         if busy or not self.still or not near:
             self.since, self.parked = None, False
