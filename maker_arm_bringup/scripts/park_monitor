@@ -1,16 +1,26 @@
 #!/usr/bin/env python3
 """Release the torque when the arm rests at `home`, so the motors cool (spec 6.9, D9).
 
-real.launch.py and sim.launch.py start it with auto_park:=true, the default.
+real.launch.py starts it (auto_park:=true, the default there). sim.launch.py starts it only with
+auto_park:=true.
 
 The rule: every arm joint within NEAR_RAD of the SRDF's `home` and slower than STILL_RAD_S, no
-active arm_controller or gripper_controller goal and no Servo twist, all for HOLD_S. The speed
-comes from the positions over WINDOW_S, not from the velocity field: the MIT feedback has 12-bit
-velocity, so a still RS02 joint (range 44 rad/s) reads 0.0107 rad/s and never passes. Then it asks
-the daemon for its mode. Only when the daemon is holding or following does it run
-`maker-arm-cli release --yes`, once, and log `parked: torque off at home`. It tries again only
-after the rule breaks, for example when `wake` moves the arm. It takes the daemon's executable,
-interface and socket from the plugin's hardware parameters in robot_description.
+active arm_controller or gripper_controller goal and no non-zero Servo twist, all for HOLD_S. The
+speed comes from the positions over WINDOW_S, not from the velocity field: the MIT feedback has
+12-bit velocity, so a still RS02 joint (range 44 rad/s) reads 0.0107 rad/s and never passes. A gap
+in the joint states longer than WINDOW_S starts the HOLD_S count again.
+
+The rule is armed (ruling R32) only after the arm left `home` since the last enable (it reached
+`home`, then an arm joint went more than NEAR_RAD from it), or ARM_S after the last enable. The
+move of `go_home` from the folded rest does not count, so `wake` and `go_home` do not park at
+once, and an idle arm still parks. The last enable is the monitor's start or a daemon mode change
+from released to holding or following. It polls the mode every POLL_S.
+
+Then it asks the daemon for its mode. Only when the daemon is holding or following does it run
+`maker-arm-cli release --yes` and log `parked: torque off at home`. If that releases nothing, it
+logs why and tries again after RETRY_S. It tries again after a park only after the rule breaks.
+It takes the daemon's executable, interface and socket from the plugin's hardware parameters in
+robot_description.
 
 On a real interface the daemon then stays up, released, and the joint states stay live. On sim
 and vcan a release ends the daemon.
@@ -35,6 +45,12 @@ STILL_RAD_S = 0.01
 HOLD_S = 3.0
 # One position step is 25.14 rad / 65535 = 0.38 mrad, so the speed resolves to 0.8 mrad/s.
 WINDOW_S = 0.5
+ARM_S = 60.0  # ruling R32
+RETRY_S = 5.0
+POLL_S = 1.0
+POLL_WAIT_S = 2.0
+TWIST_MIN = 1e-6  # a smaller twist component is no Servo activity
+HOLDING = ("holding", "following")
 GOALS = ("/arm_controller/follow_joint_trajectory/_action/status",
          "/gripper_controller/gripper_cmd/_action/status")
 TWIST = "/servo_node/delta_twist_cmds"
@@ -61,17 +77,33 @@ def daemon_cli(urdf):
 
 
 class Rule:
-    """The park rule over a stream of joint positions. step() is True once per stay at home."""
+    """The park rule over a stream of joint positions. step() is True when the arm must park."""
 
-    def __init__(self, home):
+    def __init__(self, home, now):
         self.home = home
+        self.enabled(now)
+
+    def enabled(self, now):
+        """The daemon enabled the arm at `now`, or the monitor started."""
+        self.enabled_at, self.parked, self.retry_at = now, False, now
+        self.reached = self.away = False  # at home, and away from it after that
+        self.restart()
+
+    def restart(self):
         self.since = None  # when the rule started to hold
-        self.parked = False
         self.window = None  # (t, position) at the start of the speed window
         self.still = False  # the verdict of the last full window
+        self.last = None  # the time of the last sample
+
+    def failed(self, now):
+        """park() released nothing from a holding or following daemon: try after RETRY_S."""
+        self.parked, self.retry_at = False, now + RETRY_S
 
     def step(self, now, position, busy):
-        nan = float("nan")  # a missing joint is nan, and nan fails every test
+        if self.last is not None and now - self.last > WINDOW_S:
+            self.restart()
+        self.last = now
+        nan = float("nan")  # a missing joint is nan: never near, never away
         if self.window is None or now - self.window[0] >= WINDOW_S:
             if self.window:
                 t0, p0 = self.window
@@ -79,44 +111,73 @@ class Rule:
                 self.still = all(abs(position.get(j, nan) - p0.get(j, nan)) < step
                                  for j in self.home)
             self.window = (now, position)
-        ok = not busy and self.still and all(
-            abs(position.get(j, nan) - q) <= NEAR_RAD for j, q in self.home.items())
-        if not ok:
+        off = [abs(position.get(j, nan) - q) for j, q in self.home.items()]
+        near = all(d <= NEAR_RAD for d in off)
+        self.away = self.away or (self.reached and any(d > NEAR_RAD for d in off))
+        self.reached = self.reached or near
+        if busy or not self.still or not near:
             self.since, self.parked = None, False
             return False
         if self.since is None:
             self.since = now
-        if self.parked or now - self.since < HOLD_S:
+        armed = self.away or now - self.enabled_at >= ARM_S
+        if not armed or self.parked or now < self.retry_at or now - self.since < HOLD_S:
             return False
         self.parked = True
         return True
+
+
+def moving(twist):
+    """Return True for a Twist with a component above TWIST_MIN."""
+    lin, ang = twist.linear, twist.angular
+    return any(abs(v) > TWIST_MIN for v in (lin.x, lin.y, lin.z, ang.x, ang.y, ang.z))
 
 
 def mode_of(stdout):
     """Return the mode of a STATUS line, or None."""
     for line in stdout.splitlines():
         if line.startswith("STATUS "):
-            return json.loads(line[len("STATUS "):]).get("mode")
+            try:
+                status = json.loads(line[len("STATUS "):])
+            except ValueError:
+                return None
+            return status.get("mode") if isinstance(status, dict) else None
     return None
 
 
+def enabled_again(last, mode):
+    """Return True when the daemon went from released to holding or following."""
+    return last == "released" and mode in HOLDING
+
+
+def poll_mode(cli):
+    """Return the daemon's mode, or None when it does not answer."""
+    try:
+        r = subprocess.run([cli[0], "status", *cli[1:]], capture_output=True, text=True,
+                           timeout=POLL_WAIT_S)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return mode_of(r.stdout)
+
+
 def park(cli):
-    """Release a holding or following daemon. Return (released, the line to log)."""
+    """Release a holding or following daemon. Return (released, retry, the line to log)."""
     exe, args = cli[0], cli[1:]
     try:
         status = subprocess.run([exe, "status", *args], capture_output=True, text=True,
                                 timeout=CLI_WAIT_S)
         mode = mode_of(status.stdout)
-        if mode not in ("holding", "following"):
+        if mode not in HOLDING:
             why = mode or status.stderr.strip() or "no STATUS line"
-            return False, f"not parking: the daemon is not holding or following ({why})"
+            return (False, mode != "released",
+                    f"not parking: the daemon is not holding or following ({why})")
         r = subprocess.run([exe, "release", *args, "--yes"], capture_output=True, text=True,
                            timeout=CLI_WAIT_S)
-    except (OSError, subprocess.TimeoutExpired, ValueError) as e:
-        return False, f"not parked: {e}"
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return False, True, f"not parked: {e}"
     if r.returncode != 0:
-        return False, f"park failed: {(r.stderr or r.stdout).strip()}"
-    return True, "parked: torque off at home"
+        return False, True, f"park failed: {(r.stderr or r.stdout).strip()}"
+    return True, False, "parked: torque off at home"
 
 
 def main():
@@ -125,12 +186,22 @@ def main():
     log = node.get_logger()
     try:
         cli = daemon_cli(node.declare_parameter("robot_description", "").value)
-        rule = Rule(home_of(node.declare_parameter("robot_description_semantic", "").value))
+        home = home_of(node.declare_parameter("robot_description_semantic", "").value)
     except (ET.ParseError, ValueError) as e:
         log.error(f"park_monitor: {e}")
         return 1
+    rule = Rule(home, time.monotonic())
     goals = {}
     twist = [False]
+    mode = [None]  # the last mode the daemon reported
+
+    def on_poll():
+        m = poll_mode(cli)
+        if enabled_again(mode[0], m):
+            rule.enabled(time.monotonic())
+            log.info("the daemon enabled the arm: no park until the arm leaves home and comes "
+                     f"back, or for {ARM_S:.0f} s")
+        mode[0] = m or mode[0]
 
     def on_goals(topic, msg):
         goals[topic] = any(s.status in ACTIVE for s in msg.status_list)
@@ -138,16 +209,25 @@ def main():
     def on_joints(msg):
         busy = any(goals.values()) or twist[0]
         twist[0] = False
-        if rule.step(time.monotonic(), dict(zip(msg.name, msg.position)), busy):
-            released, line = park(cli)
+        now = time.monotonic()
+        if rule.step(now, dict(zip(msg.name, msg.position)), busy):
+            released, retry, line = park(cli)
+            if released:
+                mode[0] = "released"
+            elif retry:
+                rule.failed(now)
             (log.info if released else log.warning)(line)
+
+    def on_twist(msg):
+        twist[0] = twist[0] or moving(msg.twist)
 
     # The action servers publish their status transient local, keep last 1.
     latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
     for topic in GOALS:
         node.create_subscription(GoalStatusArray, topic, lambda m, t=topic: on_goals(t, m), latched)
-    node.create_subscription(TwistStamped, TWIST, lambda _: twist.__setitem__(0, True), 10)
+    node.create_subscription(TwistStamped, TWIST, on_twist, 10)
     node.create_subscription(JointState, "/joint_states", on_joints, 10)
+    node.create_timer(POLL_S, on_poll)
     log.info(f"watching for a stay at home: {' '.join(cli)}")
     try:
         rclpy.spin(node)

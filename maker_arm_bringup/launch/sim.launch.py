@@ -41,8 +41,9 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("persist", default_value="false"),
         DeclareLaunchArgument("rviz", default_value="false"),
-        # On vcan0 a release ends the daemon, so a park there ends the stack's arm.
-        DeclareLaunchArgument("auto_park", default_value="true"),
+        # Ruling R32: off by default. The plant has no heat, and on vcan0 a release ends the
+        # daemon, so a park ends the stack's arm.
+        DeclareLaunchArgument("auto_park", default_value="false"),
         DeclareLaunchArgument(
             "scene", default_value=os.path.join(share("maker_arm_mujoco"), "config", "scene.yaml")),
         DeclareLaunchArgument("seed", default_value="0"),

@@ -100,8 +100,10 @@ def generate_launch_description():
              parameters=[description, moveit["robot_description_semantic"],
                          moveit["robot_description_kinematics"]],
              condition=IfCondition(cfg["rviz"])),
-        # Releases the torque when the arm rests at home (spec 6.9, D9).
+        # Releases the torque when the arm rests at home (spec 6.9, D9). Respawned: without it,
+        # nothing guards the motors' heat.
         Node(package="maker_arm_bringup", executable="park_monitor", output="screen",
+             respawn=True, respawn_delay=2.0,
              parameters=[description, moveit["robot_description_semantic"]],
              condition=IfCondition(cfg["auto_park"])),
     ]

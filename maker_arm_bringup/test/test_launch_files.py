@@ -165,13 +165,13 @@ def defaults(name):
             if isinstance(e, DeclareLaunchArgument)}
 
 
-def test_real_and_sim_park_by_default_and_the_stack_alone_does_not():
+def test_only_the_real_arm_parks_by_default():
     assert defaults("real")["auto_park"] == "true"
-    assert defaults("sim")["auto_park"] == "true"
+    assert defaults("sim")["auto_park"] == "false"  # ruling R32
     assert defaults("stack")["auto_park"] == "false"
     nodes = [e for e in load("stack").generate_launch_description().entities if isinstance(e, Node)]
     (park,) = [n for n in nodes if n.node_executable == "park_monitor"]
-    assert park.condition is not None
+    assert park.condition is not None and park._ExecuteLocal__respawn
     names = {"".join(t.text for t in key) for p in park._Node__parameters for key in p}
     assert {"robot_description", "robot_description_semantic"} <= names
 
