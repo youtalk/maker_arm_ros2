@@ -538,7 +538,7 @@
     <parent link="link_003" />
     <child link="link_004" />
     <axis xyz="0 0 -1" />
-    <limit lower="0" upper="3.14" effort="10" velocity="5" />
+    <limit lower="0" upper="4.1207224" effort="10" velocity="5" />
     <dynamics damping="0" friction="0.241" />
   </joint>
   <joint name="link_005_joint" type="revolute">
@@ -546,7 +546,7 @@
     <parent link="link_004" />
     <child link="link_005" />
     <axis xyz="0 0 -1" />
-    <limit lower="-1.6" upper="1.73" effort="10" velocity="5" />
+    <limit lower="-1.6" upper="1.8151424" effort="10" velocity="5" />
     <dynamics damping="0" friction="0.23" />
   </joint>
   <joint name="link_006_joint" type="revolute">
@@ -554,7 +554,7 @@
     <parent link="link_005" />
     <child link="link_006" />
     <axis xyz="0 0 1" />
-    <limit lower="-1.57" upper="1.57" effort="10" velocity="5" />
+    <limit lower="-1.57" upper="1.7034413" effort="10" velocity="5" />
     <dynamics damping="0.002" friction="0.141" />
   </joint>
   <joint name="link_007_joint" type="revolute">
