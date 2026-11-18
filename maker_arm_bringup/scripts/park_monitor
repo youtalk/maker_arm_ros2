@@ -32,6 +32,10 @@ by the speed rule above, and there is no goal and no twist that moves. After idl
 that, it pauses Servo the way go_home does, then sends one MoveGroup goal to the SRDF's `home`.
 A twist that moves cancels the goal. Any return starts the idle count again, so a failed return
 is tried again after another full idle_home_s. At `home`, the park rule takes over.
+
+The return applies only after the arm was at `home` since the last enable (ruling R42a). Before
+that, the arm is in the bring-up: it rests folded until go_home, and MoveIt cannot plan from the
+folded rest.
 """
 
 import json
@@ -158,17 +162,18 @@ class Rule:
         return True
 
 
-def idle_return(since, now, limit, home, position, mode, still, busy):
+def idle_return(since, now, limit, home, position, mode, visited, still, busy):
     """The idle rule (ruling R42). Return (since, due).
 
     since is when the arm started to idle away from home, or None. The arm idles while the daemon
     is holding or following, an arm joint is more than NEAR_RAD from home, the arm is still and
-    nothing is busy. due is True after limit s of idle, and then the count starts again. A limit
-    of 0 turns the rule off.
+    nothing is busy. visited is True when the arm was at home since the last enable (ruling R42a),
+    and only then does the arm idle. due is True after limit s of idle, and then the count starts
+    again. A limit of 0 turns the rule off.
     """
     nan = float("nan")  # a missing joint is never away
     away = any(abs(position.get(j, nan) - q) > NEAR_RAD for j, q in home.items())
-    if limit <= 0 or mode not in HOLDING or not still or busy or not away:
+    if limit <= 0 or not visited or mode not in HOLDING or not still or busy or not away:
         return None, False
     since = now if since is None else since
     return (None, True) if now - since >= limit else (since, False)
@@ -341,8 +346,8 @@ def main():
             (log.info if released else log.warning)(line)
         limit = node.get_parameter("idle_home_s").value
         returning = worker[0] is not None and worker[0].is_alive()
-        idle[0], due = idle_return(idle[0], now, limit, home, position, mode[0], rule.still,
-                                   busy or returning)
+        idle[0], due = idle_return(idle[0], now, limit, home, position, mode[0], rule.reached,
+                                   rule.still, busy or returning)
         if due:
             log.info(f"idle for {limit:g} s away from home: returning home")
             stop.clear()

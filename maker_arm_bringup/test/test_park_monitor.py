@@ -214,10 +214,11 @@ def test_a_failed_release_is_no_park(tmp_path):
 
 
 def idle(stream, limit=4.0, mode="holding"):
-    """Feed (t, position, still, busy) samples to idle_return. Return the times it was due."""
+    """Feed (t, position, still, busy) samples to idle_return, after a visit at home. Return the
+    times it was due."""
     pm, h, since, due_at = load(), home(), None, []
     for t, p, still, busy in stream:
-        since, due = pm.idle_return(since, t, limit, h, p, mode, still, busy)
+        since, due = pm.idle_return(since, t, limit, h, p, mode, True, still, busy)
         if due:
             due_at.append(t)
     return due_at
@@ -255,6 +256,31 @@ def test_at_home_the_park_acts_and_not_the_return():
 
 def test_idle_home_s_0_turns_the_return_off():
     assert idle(stays(40), limit=0.0) == []
+
+
+def returns(pm, rule, stream, limit=4.0):
+    """Feed (t, position, busy) samples to the park rule, then to idle_return, as on_joints does.
+    Return the times a return was due."""
+    since, due_at = None, []
+    for t, p, busy in stream:
+        rule.step(t, p, busy)
+        since, due = pm.idle_return(since, t, limit, rule.home, p, "holding", rule.reached,
+                                    rule.still, busy)
+        if due:
+            due_at.append(t)
+    return due_at
+
+
+def test_after_an_enable_only_a_visit_at_home_allows_a_return():
+    pm = load()
+    rule = pm.Rule(home(), 0.0)  # the enable
+    work = near(0.2)
+    # The folded rest before go_home: no return, so no Servo pause and no failed MoveIt goal.
+    assert returns(pm, rule, quarters(40, near(-0.3, "link_003_joint"))) == []
+    stream = quarters(4, start=40) + quarters(24, work, start=44)  # 1 s at home, then work
+    assert returns(pm, rule, stream) == [11.5 + 4.0]
+    rule.enabled(17.0)  # a new enable, as after a wake
+    assert returns(pm, rule, quarters(40, work, start=68)) == []
 
 
 def test_the_return_is_one_pilz_ptp_goal_to_the_srdf_home():

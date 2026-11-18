@@ -62,7 +62,7 @@ class TestIdleHome(unittest.TestCase):
             wait_for_controllers()
             move = ActionClient(node, MoveGroup, pm.MOVE)
             self.assertTrue(move.wait_for_server(timeout_sec=WAIT_S))
-            # home first: the move away from it arms the park.
+            # home first: the visit allows the idle return (R42a), the move away arms the park.
             for name in ("home", "work"):
                 handle = done(node, move.send_goal_async(
                     pm.move_goal(go_home.state(srdf, "arm", name))))
