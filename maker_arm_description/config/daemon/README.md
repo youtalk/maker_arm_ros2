@@ -1,6 +1,6 @@
 # Daemon model files
 
-Both files come from `maker-arm-cli export` of maker-arm-rs at commit `b2bae867ec099d3bf7bb650adae70ec04782e9d0`. Run this command in the root of this repository:
+Both files come from `maker-arm-cli export` of maker-arm-rs at commit `0c44d8b52f0f8beb0d26d04a80c204fb80aab82b`. Run this command in the root of this repository:
 
     maker-arm-cli export --sim --urdf maker_arm_description/urdf/maker_arm_sdk.urdf --out_dir maker_arm_description/config/daemon
 

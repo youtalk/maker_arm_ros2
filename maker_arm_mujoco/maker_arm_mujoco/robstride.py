@@ -1,19 +1,19 @@
-"""RobStride private CAN protocol, the motor side. Mirrors maker-arm-protocol (Rust)."""
+"""RobStride MIT CAN protocol, the motor side. Mirrors maker-arm-protocol (Rust)."""
 
-import math
 from typing import NamedTuple
 
+HOST_ID = 0xFD  # the id the motors reply on
 P_MIN, P_MAX = -12.57, 12.57
 KP_MAX = 500.0
 KD_MAX = 5.0
 
-COMM_MIT = 1
-COMM_FEEDBACK = 2
-COMM_ENABLE = 3
-COMM_DISABLE = 4
-COMM_SET_ZERO = 6
-COMM_READ_PARAM = 17
-COMM_WRITE_PARAM = 18
+PARAM_READ_ID = 0x300
+PARAM_WRITE_ID = 0x400
+
+OP_CLEAR_FAULT = 0xFB
+OP_ENABLE = 0xFC
+OP_DISABLE = 0xFD
+OP_SET_ZERO = 0xFE
 
 RUN_MODE = 0x7005  # u8
 VBUS = 0x701C  # f32
@@ -22,7 +22,7 @@ CAN_TIMEOUT_PER_MS = 20
 
 
 class Model(NamedTuple):
-    """The u16 mapping ranges of one motor model."""
+    """The mapping ranges of one motor model."""
 
     t_max: float
     v_max: float
@@ -39,61 +39,58 @@ class Model(NamedTuple):
 MODELS = {'RS00': Model(14.0, 33.0), 'RS02': Model(17.0, 44.0)}
 
 
-def float_to_u16(x, lo, hi):
-    """Clamp and quantize like the Rust codec: round half to even, NaN to 0."""
+def float_to_uint(x, lo, hi, bits):
+    """Clamp and scale to 0..2^bits-1, half to even like the Rust codec. NaN gives 0."""
     if x != x:
         return 0
-    x = min(max(x, lo), hi)
-    return round((x - lo) * 65535.0 / (hi - lo))
+    return round((min(max(x, lo), hi) - lo) * ((1 << bits) - 1) / (hi - lo))
 
 
-def u16_to_float(v, lo, hi):
-    return v * (hi - lo) / 65535.0 + lo
+def uint_to_float(v, lo, hi, bits):
+    return v * (hi - lo) / ((1 << bits) - 1) + lo
 
 
-def make_can_id(comm, data16, target):
-    return ((comm & 0x1F) << 24) | (data16 << 8) | target
-
-
-def split_can_id(can_id):
-    """Return (comm, data16, target)."""
-    return (can_id >> 24) & 0x1F, (can_id >> 8) & 0xFFFF, can_id & 0xFF
-
-
-def decode_mit(can_id, data, model):
-    """Return (pos, vel, kp, kd, tau) of an MIT frame. Tau rides in the CAN ID."""
+def decode_control(data, model):
+    """Return (pos, vel, kp, kd, tau) of a control payload, or None for a command payload."""
+    if bytes(data[:6]) == b'\xff' * 6:
+        return None
     m = MODELS[model]
-    u = [int.from_bytes(data[i:i + 2], 'big') for i in (0, 2, 4, 6)]
+    q = data[0] << 8 | data[1]
+    v = data[2] << 4 | data[3] >> 4
+    k = (data[3] & 0xF) << 8 | data[4]
+    d = data[5] << 4 | data[6] >> 4
+    t = (data[6] & 0xF) << 8 | data[7]
     return (
-        u16_to_float(u[0], P_MIN, P_MAX),
-        u16_to_float(u[1], m.v_min, m.v_max),
-        u16_to_float(u[2], 0.0, KP_MAX),
-        u16_to_float(u[3], 0.0, KD_MAX),
-        u16_to_float((can_id >> 8) & 0xFFFF, m.t_min, m.t_max),
+        uint_to_float(q, P_MIN, P_MAX, 16),
+        uint_to_float(v, m.v_min, m.v_max, 12),
+        uint_to_float(k, 0.0, KP_MAX, 12),
+        uint_to_float(d, 0.0, KD_MAX, 12),
+        uint_to_float(t, m.t_min, m.t_max, 12),
     )
 
 
-def encode_feedback(motor_id, host_id, pos, vel, tau, temp_c, mode, fault_bits, model):
-    """Return (can_id, data) of a feedback frame. Temperature is unsigned tenths of a degree."""
+def encode_feedback(motor_id, pos, vel, tau, temp_c, mode, fault, warning, legacy, model='RS00'):
+    """
+    Return the 8 bytes of a feedback reply on HOST_ID.
+
+    Byte 6 holds mode, fault and warning in its high nibble and the temperature's top bits in
+    its low nibble. A legacy motor sends the high nibble as 0.
+    """
     m = MODELS[model]
-    temp = min(max(math.floor(temp_c * 10.0 + 0.5), 0), 0xFFFF)
-    data = b''.join(
-        v.to_bytes(2, 'big')
-        for v in (
-            float_to_u16(pos, P_MIN, P_MAX),
-            float_to_u16(vel, m.v_min, m.v_max),
-            float_to_u16(tau, m.t_min, m.t_max),
-            temp,
-        )
-    )
-    can_id = (
-        (COMM_FEEDBACK << 24)
-        | ((mode & 0x03) << 22)
-        | ((fault_bits & 0x3F) << 16)
-        | (motor_id << 8)
-        | host_id
-    )
-    return can_id, data
+    q = float_to_uint(pos, P_MIN, P_MAX, 16)
+    v = float_to_uint(vel, m.v_min, m.v_max, 12)
+    t = float_to_uint(tau, m.t_min, m.t_max, 12)
+    temp = float_to_uint(temp_c * 10.0, 0.0, 4095.0, 12)
+    status = 0 if legacy else mode << 6 | fault << 5 | warning << 4
+    return bytes([
+        motor_id, q >> 8, q & 0xFF, v >> 4, (v & 0xF) << 4 | t >> 8, t & 0xFF,
+        status | temp >> 8, temp & 0xFF,
+    ])
+
+
+def encode_fault_status(motor_id, word):
+    """Return the 5 bytes of a fault status reply: the motor id and the fault word."""
+    return bytes([motor_id]) + word.to_bytes(4, 'little')
 
 
 def param_index(data):
@@ -102,13 +99,11 @@ def param_index(data):
 
 
 def param_raw(data):
-    """Return the 4 raw value bytes of a write frame, or of a read reply."""
+    """Return the 4 raw value bytes of a write frame."""
     return bytes(data[4:8])
 
 
-def encode_param_reply(motor_id, host_id, index, raw):
-    """Return (can_id, data) answering a parameter read. The motor id rides in bits 15..8."""
-    return (
-        make_can_id(COMM_READ_PARAM, motor_id, host_id),
-        index.to_bytes(2, 'little') + b'\0\0' + raw,
-    )
+def encode_param_reply(motor_id, index, raw, write):
+    """Return (can_id, data) answering a parameter read or write."""
+    base = PARAM_WRITE_ID if write else PARAM_READ_ID
+    return base | motor_id, index.to_bytes(2, 'little') + b'\0\0' + raw

@@ -5,7 +5,6 @@ import threading
 import time
 
 from maker_arm_mujoco import plant_node
-from maker_arm_mujoco import robstride as rs
 from maker_arm_mujoco.motors import MotorBank
 import mujoco
 import pytest
@@ -38,9 +37,8 @@ class Bus:
         raise self.send_error
 
 
-def enable_frame(motor):
-    can_id = rs.make_can_id(rs.COMM_ENABLE, 0xFD, motor) | socket.CAN_EFF_FLAG
-    return plant_node.CAN_FRAME.pack(can_id, 8, bytes(8))
+def enable_frame(motor, flags=0):
+    return plant_node.CAN_FRAME.pack(motor | flags, 8, bytes.fromhex('FFFFFFFFFFFFFFFC'))
 
 
 def test_a_can_error_drops_the_reply_and_the_plant_keeps_stepping():
@@ -54,6 +52,26 @@ def test_a_can_error_drops_the_reply_and_the_plant_keeps_stepping():
     assert any('Network is down' in line for line in log.lines)
     quiet = Bus([], BlockingIOError(errno.EAGAIN, 'again'), full)
     assert plant_node.answer(quiet, bank, 0.0, Log()) == 0
+
+
+def test_extended_frames_are_dropped():
+    bank = MotorBank(['RS00'] * 7)
+    bus = Bus([enable_frame(1, socket.CAN_EFF_FLAG), enable_frame(2)],
+              BlockingIOError(), OSError(errno.ENOBUFS, 'full'))
+    assert plant_node.answer(bus, bank, 0.0, Log()) == 1  # only the standard frame got a reply
+    assert [m.enabled for m in bank.motors[:2]] == [False, True]
+
+
+def test_a_reply_goes_out_as_a_standard_frame_with_its_real_length():
+    sent = []
+
+    class Echo(Bus):
+        def send(self, frame):
+            sent.append(plant_node.CAN_FRAME.unpack(frame))
+
+    query = plant_node.CAN_FRAME.pack(3, 8, bytes.fromhex('FFFFFFFFFFFF00FB'))
+    plant_node.answer(Echo([query], BlockingIOError(), None), MotorBank(['RS00'] * 7), 0.0, Log())
+    assert sent == [(0xFD, 5, bytes.fromhex('0300000000') + bytes(3))]
 
 
 def test_the_plant_fails_before_ready_without_a_renderer(monkeypatch, capsys):
