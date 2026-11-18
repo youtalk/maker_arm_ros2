@@ -24,7 +24,7 @@ These steps are for Ubuntu 24.04 with ROS 2 Jazzy.
     ```sh
     sudo apt install rustc-1.85 cargo-1.85 git
     git clone https://github.com/youtalk/maker-arm-rs
-    git -C maker-arm-rs checkout e11ba8865087baf68f7017d9113b33fda197255c
+    git -C maker-arm-rs checkout 2602ed769413f9cefb160101eea0cbfca817f7ee
     PATH=/usr/lib/rust-1.85/bin:$PATH cargo install --locked --path maker-arm-rs/crates/maker-arm-cli
     ```
 
@@ -306,6 +306,22 @@ To use the arm again, wake it. You do not launch again.
 If you launch the stack while the daemon is released, the stack starts with no torque. Run `wake` to enable the arm.
 
 The `STATUS` line of `maker-arm-cli status --interface can0` shows the hottest motor. `temp_max_c` is its temperature in degrees C, and `temp_max_motor` is its motor id. If a joint gets to 70 degrees C while the arm is enabled, the daemon faults and holds the arm.
+
+### Diagnostics
+
+`arm_diagnostics` publishes the arm's state on `/diagnostics` once a second. Every launch starts it. It runs `maker-arm-cli status` and publishes 8 statuses. All names start with `maker_arm: `, so you can tell them from the statuses of `controller_manager`.
+
+- `maker_arm: daemon` is OK in `following`, `holding` and `released`. It is ERROR in `fault` and `refused`. For a fault, the message gives the fault name.
+- `maker_arm: <joint>` is one status for each of the 7 joints, `link_002_joint` to `link_007_joint` and `gripper_left_joint`. It shows the temperature of the motor. It is WARN at 55 degrees C or more, and ERROR at 70 degrees C or more. A motor that does not answer is ERROR with the message `no reply`.
+- If `status` fails, the daemon is ERROR with the reason, and the 7 joints are STALE.
+
+To change the limits, set the parameters `temp_warn_c` and `temp_error_c` of `arm_diagnostics`. To see the statuses, open the monitor in a terminal with the same RMW and domain ID as the stack.
+
+```sh
+ros2 run rqt_runtime_monitor rqt_runtime_monitor
+```
+
+The daemon and the plugin now speak wire version 2. A version 1 daemon and a version 2 plugin refuse each other. After an upgrade, end the old daemon (see [End a released daemon](#end-a-released-daemon)) and launch again.
 
 ## Cameras
 
