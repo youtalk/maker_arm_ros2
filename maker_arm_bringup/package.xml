@@ -2,7 +2,7 @@
 <package format="3">
   <name>maker_arm_bringup</name>
   <version>0.1.0</version>
-  <description>Launch files, controller configuration and the release command of the MakerMods Maker Arm</description>
+  <description>Launch files, controller configuration and the release, park and wake commands of the MakerMods Maker Arm</description>
   <maintainer email="youtalk@users.noreply.github.com">Yutaka Kondo</maintainer>
   <license>Apache-2.0</license>
 
@@ -11,6 +11,7 @@
   <exec_depend>compressed_image_transport</exec_depend>
   <exec_depend>control_msgs</exec_depend>
   <exec_depend>controller_manager</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>gripper_controllers</exec_depend>
   <exec_depend>joint_state_broadcaster</exec_depend>
   <exec_depend>joint_trajectory_controller</exec_depend>
@@ -25,7 +26,10 @@
   <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>ros2controlcli</exec_depend>
+  <exec_depend>ros2run</exec_depend>
   <exec_depend>rviz2</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>trajectory_msgs</exec_depend>
   <exec_depend>v4l2_camera</exec_depend>
   <exec_depend>xacro</exec_depend>
@@ -33,9 +37,7 @@
   <test_depend>launch_testing</test_depend>
   <test_depend>launch_testing_ament_cmake</test_depend>
   <test_depend>maker_arm_demos</test_depend>
-  <test_depend>ros2controlcli</test_depend>
   <test_depend>ros2launch</test_depend>
-  <test_depend>ros2run</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

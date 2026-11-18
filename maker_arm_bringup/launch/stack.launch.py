@@ -14,7 +14,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 DAEMON = os.path.join(share("maker_arm_description"), "config", "daemon")
 with open(os.path.join(DAEMON, "gripper_map.txt")) as f:
     GRIPPER_MAP = f.read().strip()  # the measured map, one line "a,b"
-# name -> default, in the order of the xacro args of maker_arm_description
+# name -> default, in the order of the xacro args of maker_arm_description, then the others
 ARGS = {
     "interface": "sim",
     "executable": "maker-arm-cli",
@@ -29,7 +29,9 @@ ARGS = {
     "log": "",
     "desk": "true",
     "rviz": "false",
+    "auto_park": "false",
 }
+NOT_XACRO = ("rviz", "auto_park")
 CONTROLLERS = ("joint_state_broadcaster", "arm_controller", "gripper_controller")
 
 
@@ -47,7 +49,7 @@ def generate_launch_description():
     cfg = {k: LaunchConfiguration(k) for k in ARGS}
     xacro_cmd = ["xacro ", os.path.join(share("maker_arm_description"), "urdf", "maker_arm.urdf.xacro")]
     for k in ARGS:
-        if k != "rviz":
+        if k not in NOT_XACRO:
             xacro_cmd += [f" {k}:=", cfg[k]]
     description = {"robot_description": ParameterValue(Command(xacro_cmd), value_type=str)}
 
@@ -98,5 +100,9 @@ def generate_launch_description():
              parameters=[description, moveit["robot_description_semantic"],
                          moveit["robot_description_kinematics"]],
              condition=IfCondition(cfg["rviz"])),
+        # Releases the torque when the arm rests at home (spec 6.9, D9).
+        Node(package="maker_arm_bringup", executable="park_monitor", output="screen",
+             parameters=[description, moveit["robot_description_semantic"]],
+             condition=IfCondition(cfg["auto_park"])),
     ]
     return LaunchDescription([DeclareLaunchArgument(k, default_value=v) for k, v in ARGS.items()] + nodes)

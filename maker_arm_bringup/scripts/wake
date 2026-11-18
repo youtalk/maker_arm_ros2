@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Enable a parked arm again with no relaunch, then move it to home.
+#
+#     ros2 run maker_arm_bringup wake [--interface IF] [--socket PATH]
+#
+# Support the arm first. `maker-arm-cli enable` refuses unless the daemon is released, and asks
+# for a typed ENABLE. The daemon then holds the measured pose. The controllers still hold the
+# home pose from before the park, so they stop, the hardware component turns inactive and active
+# again (its activate takes the measured pose), and they start at the measured pose. Then
+# go_home moves the arm to home. Adds --interface can0 when the caller gives none.
+set -eu
+iface=(--interface can0)
+for a in "$@"; do
+  case "$a" in --interface|--interface=*) iface=() ;; esac
+done
+if ! maker-arm-cli enable "${iface[@]}" "$@"; then
+  echo "wake: the arm was not enabled. Torque stays off." >&2
+  exit 1
+fi
+step() {
+  if ! "$@"; then
+    echo "wake: '$*' failed. The daemon holds the arm where it is." >&2
+    exit 1
+  fi
+}
+controllers=(arm_controller gripper_controller)
+step ros2 control switch_controllers --strict --deactivate "${controllers[@]}"
+step ros2 control set_hardware_component_state MakerArm inactive
+step ros2 control set_hardware_component_state MakerArm active
+step ros2 control switch_controllers --strict --activate "${controllers[@]}"
+exec ros2 run maker_arm_bringup go_home

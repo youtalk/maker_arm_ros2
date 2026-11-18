@@ -20,6 +20,9 @@ using hardware_interface::return_type;
 const std::array<std::string, 7> kJoints = {"link_002_joint", "link_003_joint",
   "link_004_joint", "link_005_joint", "link_006_joint", "link_007_joint", "gripper_left_joint"};
 const char * const kModes[] = {"holding", "following", "refused", "fault", "released"};
+const char * const kReleased =
+  "the daemon is released: the motors have no torque and the joint states stay live. Support "
+  "the arm, then run `ros2 run maker_arm_bringup wake` to enable it again.";
 
 std::vector<std::string> names(const std::vector<hardware_interface::InterfaceInfo> & interfaces)
 {
@@ -122,7 +125,8 @@ MakerArmSystem::CallbackReturn MakerArmSystem::on_cleanup(const rclcpp_lifecycle
   return CallbackReturn::SUCCESS;
 }
 
-// Every command starts at the measured pose, so the first target is no jump.
+// Every command starts at the measured pose, so the first target is no jump. A released daemon
+// gets no Activate: it would answer released. `wake` enables the arm and activates again.
 MakerArmSystem::CallbackReturn MakerArmSystem::on_activate(const rclcpp_lifecycle::State &)
 {
   if (!link_) {return CallbackReturn::ERROR;}
@@ -132,6 +136,11 @@ MakerArmSystem::CallbackReturn MakerArmSystem::on_activate(const rclcpp_lifecycl
     for (size_t j = 0; j < commands_.size(); ++j) {
       std::ignore = set_command(commands_[j], s.q[j], true);
     }
+    if (s.mode == wire::Mode::Released) {
+      released_ = true;
+      RCLCPP_WARN(get_logger(), "%s", kReleased);
+      return CallbackReturn::SUCCESS;
+    }
     const auto a = link_->control(wire::Op::Activate);
     if (a.mode != wire::Mode::Holding) {
       RCLCPP_ERROR(
@@ -139,6 +148,7 @@ MakerArmSystem::CallbackReturn MakerArmSystem::on_activate(const rclcpp_lifecycl
         kModes[static_cast<int>(a.mode)], a.refused, a.fault);
       return CallbackReturn::ERROR;
     }
+    released_ = false;
   } catch (const std::exception & e) {
     RCLCPP_ERROR(get_logger(), "activate: %s", e.what());
     return CallbackReturn::ERROR;
@@ -171,6 +181,11 @@ return_type MakerArmSystem::read(const rclcpp::Time &, const rclcpp::Duration &)
   try {
     const auto s = link_->poll();
     publish(s);
+    if (s.mode == wire::Mode::Released) {
+      if (!released_) {RCLCPP_WARN(get_logger(), "%s", kReleased);}
+      released_ = true;
+      return return_type::OK;
+    }
     if (s.mode == wire::Mode::Holding || s.mode == wire::Mode::Following) {return return_type::OK;}
     RCLCPP_ERROR(
       get_logger(), "the daemon reports mode %s, refused %u, fault %u; it holds the arm",
@@ -184,6 +199,8 @@ return_type MakerArmSystem::read(const rclcpp::Time &, const rclcpp::Duration &)
 return_type MakerArmSystem::write(const rclcpp::Time &, const rclcpp::Duration &)
 {
   if (!link_) {return return_type::ERROR;}
+  // Released, or enabled again but not yet activated: the daemon ignores commands anyway.
+  if (released_) {return return_type::OK;}
   std::array<double, 7> q;
   for (size_t j = 0; j < q.size(); ++j) {
     std::ignore = get_command(commands_[j], q[j], true);

@@ -23,7 +23,7 @@ def camera_nodes(context):
 
 
 def launch_setup(context):
-    names = [*FILES, "residual", "interface", "rt", "persist", "rviz"]
+    names = [*FILES, "residual", "interface", "rt", "persist", "rviz", "auto_park"]
     args = {k: context.launch_configurations[k] for k in names}
     if not args["profile"]:
         raise RuntimeError(
@@ -47,7 +47,7 @@ def generate_launch_description():
     defaults = {"profile": os.path.join(DAEMON, "real_profile_caps05.json"),
                 "dynamics": os.path.join(DAEMON, "dynamics_urdf.json"),
                 "params": "", "gripper_map": os.path.join(DAEMON, "gripper_map.txt"), "interface": "can0", "residual": "",
-                "rt": "false", "persist": "false", "rviz": "false",
+                "rt": "false", "persist": "false", "rviz": "false", "auto_park": "true",
                 "wrist_camera": "", "head_camera": ""}
     return LaunchDescription([DeclareLaunchArgument(k, default_value=v) for k, v in defaults.items()]
                              + [OpaqueFunction(function=launch_setup)])

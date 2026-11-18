@@ -31,6 +31,7 @@ def generate_launch_description():
             "dynamics": os.path.join(DAEMON, "dynamics_urdf.json"),
             "persist": LaunchConfiguration("persist"),
             "rviz": LaunchConfiguration("rviz"),
+            "auto_park": LaunchConfiguration("auto_park"),
         }.items())
 
     def on_stdout(event):
@@ -40,6 +41,8 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("persist", default_value="false"),
         DeclareLaunchArgument("rviz", default_value="false"),
+        # On vcan0 a release ends the daemon, so a park there ends the stack's arm.
+        DeclareLaunchArgument("auto_park", default_value="true"),
         DeclareLaunchArgument(
             "scene", default_value=os.path.join(share("maker_arm_mujoco"), "config", "scene.yaml")),
         DeclareLaunchArgument("seed", default_value="0"),

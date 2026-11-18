@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""Release the torque when the arm rests at `home`, so the motors cool (spec 6.9, D9).
+
+real.launch.py and sim.launch.py start it with auto_park:=true, the default.
+
+The rule: every arm joint within NEAR_RAD of the SRDF's `home` and slower than STILL_RAD_S, no
+active arm_controller or gripper_controller goal and no Servo twist, all for HOLD_S. The speed
+comes from the positions over WINDOW_S, not from the velocity field: the MIT feedback has 12-bit
+velocity, so a still RS02 joint (range 44 rad/s) reads 0.0107 rad/s and never passes. Then it asks
+the daemon for its mode. Only when the daemon is holding or following does it run
+`maker-arm-cli release --yes`, once, and log `parked: torque off at home`. It tries again only
+after the rule breaks, for example when `wake` moves the arm. It takes the daemon's executable,
+interface and socket from the plugin's hardware parameters in robot_description.
+
+On a real interface the daemon then stays up, released, and the joint states stay live. On sim
+and vcan a release ends the daemon.
+"""
+
+import json
+import subprocess
+import sys
+import time
+import xml.etree.ElementTree as ET
+
+import rclpy
+from action_msgs.msg import GoalStatus, GoalStatusArray
+from geometry_msgs.msg import TwistStamped
+from rclpy.executors import ExternalShutdownException
+from rclpy.qos import DurabilityPolicy, QoSProfile
+from sensor_msgs.msg import JointState
+
+# The owner's rule (spec 6.9).
+NEAR_RAD = 0.03
+STILL_RAD_S = 0.01
+HOLD_S = 3.0
+# One position step is 25.14 rad / 65535 = 0.38 mrad, so the speed resolves to 0.8 mrad/s.
+WINDOW_S = 0.5
+GOALS = ("/arm_controller/follow_joint_trajectory/_action/status",
+         "/gripper_controller/gripper_cmd/_action/status")
+TWIST = "/servo_node/delta_twist_cmds"
+ACTIVE = (GoalStatus.STATUS_ACCEPTED, GoalStatus.STATUS_EXECUTING, GoalStatus.STATUS_CANCELING)
+CLI_WAIT_S = 10.0  # the CLI's own read timeout
+
+
+def home_of(srdf):
+    """Return {joint: value} of the SRDF's arm state `home`."""
+    for s in ET.fromstring(srdf).findall("group_state"):
+        if (s.get("group"), s.get("name")) == ("arm", "home"):
+            return {j.get("name"): float(j.get("value")) for j in s.findall("joint")}
+    raise ValueError("the SRDF has no arm state home")
+
+
+def daemon_cli(urdf):
+    """Return [executable, --interface, IF(, --socket, PATH)] of the plugin's hardware params."""
+    hw = {p.get("name"): (p.text or "").strip()
+          for p in ET.fromstring(urdf).iterfind("ros2_control/hardware/param")}
+    if not hw.get("interface"):
+        raise ValueError("robot_description has no ros2_control interface parameter")
+    cli = [hw.get("executable") or "maker-arm-cli", "--interface", hw["interface"]]
+    return cli + ["--socket", hw["socket"]] if hw.get("socket") else cli
+
+
+class Rule:
+    """The park rule over a stream of joint positions. step() is True once per stay at home."""
+
+    def __init__(self, home):
+        self.home = home
+        self.since = None  # when the rule started to hold
+        self.parked = False
+        self.window = None  # (t, position) at the start of the speed window
+        self.still = False  # the verdict of the last full window
+
+    def step(self, now, position, busy):
+        nan = float("nan")  # a missing joint is nan, and nan fails every test
+        if self.window is None or now - self.window[0] >= WINDOW_S:
+            if self.window:
+                t0, p0 = self.window
+                step = STILL_RAD_S * (now - t0)
+                self.still = all(abs(position.get(j, nan) - p0.get(j, nan)) < step
+                                 for j in self.home)
+            self.window = (now, position)
+        ok = not busy and self.still and all(
+            abs(position.get(j, nan) - q) <= NEAR_RAD for j, q in self.home.items())
+        if not ok:
+            self.since, self.parked = None, False
+            return False
+        if self.since is None:
+            self.since = now
+        if self.parked or now - self.since < HOLD_S:
+            return False
+        self.parked = True
+        return True
+
+
+def mode_of(stdout):
+    """Return the mode of a STATUS line, or None."""
+    for line in stdout.splitlines():
+        if line.startswith("STATUS "):
+            return json.loads(line[len("STATUS "):]).get("mode")
+    return None
+
+
+def park(cli):
+    """Release a holding or following daemon. Return (released, the line to log)."""
+    exe, args = cli[0], cli[1:]
+    try:
+        status = subprocess.run([exe, "status", *args], capture_output=True, text=True,
+                                timeout=CLI_WAIT_S)
+        mode = mode_of(status.stdout)
+        if mode not in ("holding", "following"):
+            why = mode or status.stderr.strip() or "no STATUS line"
+            return False, f"not parking: the daemon is not holding or following ({why})"
+        r = subprocess.run([exe, "release", *args, "--yes"], capture_output=True, text=True,
+                           timeout=CLI_WAIT_S)
+    except (OSError, subprocess.TimeoutExpired, ValueError) as e:
+        return False, f"not parked: {e}"
+    if r.returncode != 0:
+        return False, f"park failed: {(r.stderr or r.stdout).strip()}"
+    return True, "parked: torque off at home"
+
+
+def main():
+    rclpy.init()
+    node = rclpy.create_node("park_monitor")
+    log = node.get_logger()
+    try:
+        cli = daemon_cli(node.declare_parameter("robot_description", "").value)
+        rule = Rule(home_of(node.declare_parameter("robot_description_semantic", "").value))
+    except (ET.ParseError, ValueError) as e:
+        log.error(f"park_monitor: {e}")
+        return 1
+    goals = {}
+    twist = [False]
+
+    def on_goals(topic, msg):
+        goals[topic] = any(s.status in ACTIVE for s in msg.status_list)
+
+    def on_joints(msg):
+        busy = any(goals.values()) or twist[0]
+        twist[0] = False
+        if rule.step(time.monotonic(), dict(zip(msg.name, msg.position)), busy):
+            released, line = park(cli)
+            (log.info if released else log.warning)(line)
+
+    # The action servers publish their status transient local, keep last 1.
+    latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+    for topic in GOALS:
+        node.create_subscription(GoalStatusArray, topic, lambda m, t=topic: on_goals(t, m), latched)
+    node.create_subscription(TwistStamped, TWIST, lambda _: twist.__setitem__(0, True), 10)
+    node.create_subscription(JointState, "/joint_states", on_joints, 10)
+    log.info(f"watching for a stay at home: {' '.join(cli)}")
+    try:
+        rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.try_shutdown()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
