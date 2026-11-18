@@ -24,7 +24,7 @@ These steps are for Ubuntu 24.04 with ROS 2 Jazzy.
     ```sh
     sudo apt install rustc-1.85 cargo-1.85 git
     git clone https://github.com/youtalk/maker-arm-rs
-    git -C maker-arm-rs checkout 3cf672aaa5f01d83dde6154fd42ef50ab6747772
+    git -C maker-arm-rs checkout 5393569a5b57ff197f5638c2ab3896f2b2027c2b
     PATH=/usr/lib/rust-1.85/bin:$PATH cargo install --locked --path maker-arm-rs/crates/maker-arm-cli
     ```
 
@@ -141,10 +141,12 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
 2. Bring up `can0` at 1 Mbit/s. For a native CAN adapter, run this command.
 
     ```sh
-    sudo ip link set can0 type can bitrate 1000000 restart-ms 100 && sudo ip link set up can0
+    sudo ip link set can0 type can bitrate 1000000 && sudo ip link set up can0
     ```
 
-    `restart-ms` brings the interface back after a bus-off. A bus-off can come, for example, after frames that no powered motor acknowledged.
+    Do not add `restart-ms`. A gs_usb adapter such as candleLight does not support it, and the command then stops after `ip link set can0 down` and leaves `can0` down.
+
+    A bus-off can come, for example, after frames that no powered motor acknowledged. To see a bus-off, run `ip -details link show can0`. It shows `BUS-OFF`. To clear it, run `sudo ip link set can0 down`, then bring `can0` up with the same command.
 
 3. Support the arm with your hand or a stand. Do this before the first launch and before every release. Now release the emergency stop to power the motors. No motor is enabled yet. Keep a hand near the emergency stop.
 4. Ask the daemon for its status. A daemon can already hold the arm.
@@ -170,6 +172,28 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
     ```
 
     J2 and J3 read near 0, and the closed gripper reads near 0. If they do not, the arm is not in the vendor zero. Stop, and do not launch. Then move one joint at a time by hand, and run `scan` again after each move. Only the value of that joint changes.
+
+    To see the joints live, run the torque-off view. It starts RViz and shows the joint states at 5 Hz. It only reads the motors and never enables one. It does not start the daemon, so run it before step 7 and stop it with Ctrl-C.
+
+    ```sh
+    ros2 launch maker_arm_bringup torque_off.launch.py
+    ```
+
+    Move each joint by hand. If RViz moves the joint the other way, the direction is wrong. If the pose does not match the arm, the offset is wrong. The jaw follows the gripper map. Add `profile:=<file>` for another profile. Add `gripper_map:=<file>` for a file with one line `a,b`. Without it, the CLI default map applies. If a joint reads nan, the view names that joint once a second. The CLI also prints the fault text of a motor that reports a fault.
+
+    Start each hand motion from the folded rest. The table gives one motion for each joint and the change of the joint value. To see the values, run `ros2 topic echo /joint_states` in a second terminal. If a value changes the other way, the direction of that joint is wrong. Stop, and do not launch.
+
+    | Joint | Hand motion from the folded rest | Value |
+    | --- | --- | --- |
+    | J1 `link_002_joint` | Turn the arm on its base, clockwise as seen from above. | more positive |
+    | J2 `link_003_joint` | Lift the upper arm away from the base. | more negative |
+    | J3 `link_004_joint` | Lift the forearm away from the upper arm. | more positive |
+    | J4 `link_005_joint` | Tip the gripper so that the jaw tips go up. | more positive |
+    | J5 `link_006_joint` | Swing the gripper clockwise as seen from above. | more positive |
+    | J6 `link_007_joint` | Turn the gripper clockwise as seen from the jaw tips. | more positive |
+    | Jaw `gripper_left_joint` | Open the jaws. | more positive |
+
+    `scan` without `--watch` prints motor angles. There, J5 changes the other way, and the gripper value goes more negative as the jaws open.
 
 7. Fold the arm back into its rest and support it. Enable holds the arm where it is, and `go_home` (step 10) moves the arm only from the folded rest. Then launch the stack. Without `profile:=`, it loads the shipped caps 0.5 profile. For an arm with another zero, add `profile:=$HOME/maker_arm/real_profile.json`.
 
@@ -210,12 +234,24 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
 
 If you stop the launch with Ctrl-C, the daemon keeps holding the arm. To turn the motors off, run the release step.
 
-If a motor reports a fault, the daemon holds the arm. A gripper fault also disables the gripper motor. The daemon never enables a motor again by itself. To recover, do these steps:
+If a motor reports a fault, the daemon holds the arm. A gripper fault also disables the gripper motor. The daemon never enables a motor again by itself. The `fault` field of the `STATUS` line from `maker-arm-cli status --interface can0` gives the fault code. Code 8 means that a motor restarted, for example after an emergency stop. Code 9 means a CAN send or receive error. To recover, do these steps:
 
 1. Support the arm.
-2. Press and release the emergency stop. This cuts the motor power and clears the fault. The vendor's `maker-arm scan --clear-faults` also clears it.
-3. Release the arm with `ros2 run maker_arm_bringup release`. The daemon stays in its fault hold until you do this.
+2. Press and release the emergency stop. This cuts the motor power and clears the fault. The vendor's `maker-arm scan --clear-faults` also clears it. The daemon keeps holding.
+3. Release the arm with `ros2 run maker_arm_bringup release`. The daemon stays in its fault hold until you do this. If `release` names motors that did not confirm the disable, press the emergency stop.
 4. Find the cause of the fault. Then start the real-arm steps again from step 4.
+
+## Cameras
+
+`real.launch.py` starts a `v4l2_camera` node for each camera argument that is not empty. Each camera is 640 x 480 at 30 fps and publishes compressed images. Use the `/dev/v4l/by-id/` path, because the `/dev/videoN` numbers change between boots.
+
+```sh
+ros2 launch maker_arm_bringup real.launch.py \
+    wrist_camera:=/dev/v4l/by-id/usb-Sonix_Technology_Co.__Ltd._KD-USB_Cameras_KD-USB_Cameras-video-index0 \
+    head_camera:=/dev/v4l/by-id/usb-Remo_Tech_Co.__Ltd._OBSBOT_Meet_2-video-index0
+```
+
+The wrist camera publishes `/wrist_camera/image_raw/compressed`, the same topic as the simulation. The head camera publishes `/head_camera/image_raw/compressed`. The head camera is a fixed view of the arm and the desk. Turn off its AI framing, so the image never zooms.
 
 ## Conduit
 
@@ -230,7 +266,8 @@ Use these values to connect Conduit.
 | Gripper joint | `gripper_left_joint` |
 | Gripper open | 0.0405171 m per jaw |
 | Gripper closed | 0.0030216 m per jaw |
-| Wrist camera (simulation only) | `/wrist_camera/image_raw/compressed` |
+| Wrist camera | `/wrist_camera/image_raw/compressed` |
+| Head camera (real arm only) | `/head_camera/image_raw/compressed` |
 
 The open and closed values come from the vendor's gripper preview map. Measure them on your arm before you rely on them.
 

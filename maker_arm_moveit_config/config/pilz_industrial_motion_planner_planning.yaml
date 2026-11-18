@@ -1,7 +1,8 @@
 planning_plugins:
   - pilz_industrial_motion_planner/CommandPlanner
-default_planner_config: LIN
+default_planner_config: PTP
 request_adapters:
+  - maker_arm_moveit_config/DefaultPlannerId
   - default_planning_request_adapters/ResolveConstraintFrames
   - default_planning_request_adapters/ValidateWorkspaceBounds
   - default_planning_request_adapters/CheckStartStateBounds
