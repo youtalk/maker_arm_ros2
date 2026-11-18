@@ -58,7 +58,9 @@ GOALS = ("/arm_controller/follow_joint_trajectory/_action/status",
          "/gripper_controller/gripper_cmd/_action/status")
 TWIST = "/servo_node/delta_twist_cmds"
 ACTIVE = (GoalStatus.STATUS_ACCEPTED, GoalStatus.STATUS_EXECUTING, GoalStatus.STATUS_CANCELING)
-CLI_WAIT_S = 10.0  # the CLI's own read timeout
+# The CLI's own read timeout. A release replies after its 2 s torque ramp (maker-arm-rs R36),
+# and the daemon reports holding until then.
+CLI_WAIT_S = 10.0
 
 
 def home_of(srdf):

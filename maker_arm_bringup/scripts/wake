@@ -18,17 +18,20 @@ done
 controllers=(arm_controller gripper_controller)
 # list_controllers waits for ever without a controller manager.
 if ! listed=$(timeout 10 ros2 control list_controllers 2>&1); then
-  echo "wake: no controller manager answered in 10 s. Launch the stack first. Torque stays off." >&2
+  echo "wake: no controller manager answered in 10 s. Launch the stack first." \
+    "wake enabled nothing." >&2
   exit 1
 fi
 for c in "${controllers[@]}"; do
   case "$listed" in
     *"$c"*) ;;
-    *) echo "wake: the controller manager has no $c. Torque stays off." >&2; exit 1 ;;
+    *) echo "wake: the controller manager has no $c. wake enabled nothing." >&2; exit 1 ;;
   esac
 done
 if ! maker-arm-cli enable "${iface[@]}" "$@"; then
-  echo "wake: the arm was not enabled. Torque stays off." >&2
+  # A release or a park takes about 2 s (a torque ramp). Until it ends, the daemon is holding.
+  echo "wake: the arm was not enabled, and the daemon keeps its mode. If a park or a release" \
+    "is still running, wait about 2 s and run wake again." >&2
   exit 1
 fi
 step() {

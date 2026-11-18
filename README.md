@@ -241,7 +241,7 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
     ros2 run maker_arm_bringup release
     ```
 
-    Only a typed `RELEASE` disables the motors. If the arm is parked, it is already released. The released daemon stays up and keeps the bus lock until it ends.
+    Only a typed `RELEASE` disables the motors. The release takes about 2 s: the daemon ramps the torque down, and then it disables the motors. If the arm is parked, it is already released. The released daemon stays up and keeps the bus lock until it ends.
 
 If you stop the launch with Ctrl-C, the daemon keeps holding the arm. To turn the motors off, run the release step.
 
@@ -284,7 +284,7 @@ J3 (`link_004_joint`) holds the forearm against gravity at `home` and at `work`.
 
 After an enable, `park_monitor` parks only after the arm left `home` and came back, or after 60 s. Left means that an arm joint went more than 0.15 rad from `home`, so a small hold error does not count. The move of `go_home` from the folded rest does not count. An enable is the start of the stack or a `wake`. So after `go_home` and after `wake`, the arm stays enabled at `home` for 60 s.
 
-Then `park_monitor` asks the daemon for its mode. If the daemon is `holding` or `following`, it runs `maker-arm-cli release --yes` and logs `parked: torque off at home`. If the release fails, it logs why and tries again every 5 s. The arm drops a few degrees onto its folded rest. A park also turns off the gripper motor, so an object in the jaw drops. The rule applies to each path to `home`: MoveIt, Conduit and `go_home`. To stop the park, add `auto_park:=false` to the launch.
+Then `park_monitor` asks the daemon for its mode. If the daemon is `holding` or `following`, it runs `maker-arm-cli release --yes` and logs `parked: torque off at home`. The release takes about 2 s, because the daemon ramps the torque down before it disables the motors. If the release fails, it logs why and tries again every 5 s. During the ramp, the arm sinks a few degrees onto its folded rest. A park also turns off the gripper motor, so an object in the jaw drops. The rule applies to each path to `home`: MoveIt, Conduit and `go_home`. To stop the park, add `auto_park:=false` to the launch.
 
 After a park on the real arm, the daemon stays up in mode `released`. It reads the motors at 5 Hz, so `/joint_states` and RViz stay live. The plugin sends no command to a released daemon.
 
@@ -297,7 +297,7 @@ To use the arm again, wake it. You do not launch again.
     ros2 run maker_arm_bringup wake
     ```
 
-`wake` enables nothing unless the controller manager answers and has both controllers. It refuses unless the daemon is released. The daemon enables the arm at the measured pose after the checks of the first enable. If a joint is at 70 degrees C or more, the daemon refuses, and the torque stays off. Next, `wake` restarts `arm_controller` and `gripper_controller`. They then hold the measured pose and not the `home` pose from before the park. Last, `wake` runs `go_home`. The arm then stays enabled at `home` for 60 s, or until it moves away and comes back. For another interface, add `--interface <name>`.
+`wake` enables nothing unless the controller manager answers and has both controllers. It refuses unless the daemon is released. A park or a release takes about 2 s, so if `wake` refuses right after a park, wait and run it again. The daemon enables the arm at the measured pose after the checks of the first enable. If a joint is at 70 degrees C or more, the daemon refuses, and the torque stays off. Next, `wake` restarts `arm_controller` and `gripper_controller`. They then hold the measured pose and not the `home` pose from before the park. Last, `wake` runs `go_home`. The arm then stays enabled at `home` for 60 s, or until it moves away and comes back. For another interface, add `--interface <name>`.
 
 If you launch the stack while the daemon is released, the stack starts with no torque. Run `wake` to enable the arm.
 

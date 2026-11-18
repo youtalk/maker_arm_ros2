@@ -49,7 +49,7 @@ def test_a_refused_enable_restarts_nothing(tmp_path):
     r, calls = run(tmp_path, enable_exit=1)
     assert r.returncode == 1
     assert calls[1:] == ["maker-arm-cli enable --interface can0"]
-    assert "Torque stays off" in r.stderr
+    assert "wait about 2 s" in r.stderr
 
 
 def test_without_the_controller_manager_or_a_controller_nothing_is_enabled(tmp_path):
