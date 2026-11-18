@@ -82,3 +82,17 @@ def test_daemon_cli_takes_the_interface_and_socket_of_the_urdf():
     urdf = ("<robot><ros2_control><hardware><param name='interface'>can0</param>"
             "<param name='socket'>/s</param></hardware></ros2_control></robot>")
     assert load().daemon_cli(urdf) == ["maker-arm-cli", "--interface", "can0", "--socket", "/s"]
+
+
+@pytest.mark.parametrize("status", [line(mode="rebooting"), line(mode=None), line(mode=["holding"]),
+                                    {k: v for k, v in line().items() if k != "mode"}])
+def test_an_unknown_or_missing_mode_is_error(status):
+    assert run(status)["maker_arm: daemon"][0] == ERROR
+
+
+@pytest.mark.parametrize("bad", [line(temp_c="hot"), line(temp_c=None), line(temp_c=[35.0, "x"] + [1] * 5),
+                                 line(temp_c=[True] * 7), line(fault=[1], mode="fault")])
+def test_a_malformed_status_is_error_bad_status_and_7_stale(bad):
+    s = run(bad)
+    assert s["maker_arm: daemon"][0] == ERROR and s["maker_arm: daemon"][1].startswith("bad STATUS: ")
+    assert [v[0] for n, v in s.items() if n != "maker_arm: daemon"] == [STALE] * 7

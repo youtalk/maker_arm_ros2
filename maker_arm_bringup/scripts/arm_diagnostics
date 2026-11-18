@@ -23,7 +23,7 @@ PERIOD_S = 1.0
 CLI_WAIT_S = 2.0
 # Motor ids 1 to 7, in the order of the STATUS line's temp_c.
 JOINTS = [f"link_00{i}_joint" for i in range(2, 8)] + ["gripper_left_joint"]
-BAD_MODES = ("fault", "refused")
+GOOD_MODES = ("following", "holding", "released")  # any other or missing mode is ERROR
 # The daemon's fault_code() in maker-arm-rs crates/maker-arm-cli/src/serve.rs.
 FAULTS = {1: "feedback timeout", 2: "motor fault", 3: "motor not in MIT mode",
           4: "over temperature", 5: "bad command", 6: "fault reply timeout", 7: "warning",
@@ -70,6 +70,15 @@ def poll(cli):
 
 
 def diagnostics(status, why, warn_c, error_c):
+    """Return the 8 statuses of diagnostics_of(), and never raise: a STATUS that does not parse
+    gives ERROR "bad STATUS: ..." and 7 STALE."""
+    try:
+        return diagnostics_of(status, why, warn_c, error_c)
+    except (TypeError, ValueError, AttributeError) as e:
+        return diagnostics_of(None, f"bad STATUS: {e!r}", warn_c, error_c)
+
+
+def diagnostics_of(status, why, warn_c, error_c):
     """Return the 8 statuses as (name, level, message, {key: value}).
 
     status is the parsed STATUS line, or None with why the reason. A joint is ERROR at or above
@@ -81,14 +90,18 @@ def diagnostics(status, why, warn_c, error_c):
     mode, code = status.get("mode"), status.get("fault", 0)
     fault = FAULTS.get(code, f"fault code {code}") if code else ""
     message = f"{mode}: {fault}" if fault else str(mode)
-    out = [("maker_arm: daemon", ERROR if mode in BAD_MODES else OK, message,
+    out = [("maker_arm: daemon", OK if mode in GOOD_MODES else ERROR, message,
             {"mode": mode, "fault code": code, "fault": fault,
              "clamped": status.get("clamped"), "refused": status.get("refused")})]
-    temps = status.get("temp_c") or []
+    temps = status.get("temp_c")
+    if not isinstance(temps, list):
+        raise TypeError("temp_c is not a list")
     for i, joint in enumerate(JOINTS):
         t = temps[i] if i < len(temps) else None
         if t is None:
             level, message = ERROR, "no reply"
+        elif isinstance(t, bool) or not isinstance(t, (int, float)):
+            raise TypeError(f"temp_c[{i}] is not a number")
         else:
             level = ERROR if t >= error_c else WARN if t >= warn_c else OK
             message = f"{t:g} C"
