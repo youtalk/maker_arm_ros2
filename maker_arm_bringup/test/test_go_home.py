@@ -67,10 +67,10 @@ def test_go_home_checks_that_the_arm_arrived():
     go_home = load()
     home = {"link_002_joint": 0.0, "link_003_joint": -0.1}
     closed = {"gripper_left_joint": 0.003}
-    near = {"link_002_joint": 0.019, "link_003_joint": -0.1, "gripper_left_joint": 0.0049}
-    go_home.check_arrival(home, closed, near)
-    with pytest.raises(RuntimeError, match=r"link_003_joint stopped 0\.0210 rad .*limit 0\.02 rad"):
-        go_home.check_arrival(home, closed, {**near, "link_003_joint": -0.121})
+    near = {"link_002_joint": 0.0201, "link_003_joint": -0.1, "gripper_left_joint": 0.0049}
+    go_home.check_arrival(home, closed, near)  # J4 at caps 0.5 held 20.1 mrad off home
+    with pytest.raises(RuntimeError, match=r"link_003_joint stopped 0\.0310 rad .*limit 0\.03 rad"):
+        go_home.check_arrival(home, closed, {**near, "link_003_joint": -0.131})
     go_home.check_arrival(home, closed, {**near, "gripper_left_joint": 0.0014})  # past the goal
     with pytest.raises(RuntimeError, match=r"gripper_left_joint stopped 0\.0021 m .*limit 0\.002 m"):
         go_home.check_arrival(home, closed, {**near, "gripper_left_joint": 0.0051})
@@ -90,6 +90,15 @@ class FakeGoal:
     def cancel_goal_async(self):
         self.cancelled = True
         return "cancel"
+
+
+def test_home_is_the_same_band_as_the_park_monitors():
+    loader = importlib.machinery.SourceFileLoader(
+        "park_monitor", str(PKG / "scripts" / "park_monitor"))
+    park_monitor = importlib.util.module_from_spec(
+        importlib.util.spec_from_loader("park_monitor", loader))
+    loader.exec_module(park_monitor)
+    assert load().ARRIVED_RAD == park_monitor.NEAR_RAD == 0.03  # ruling R37
 
 
 @pytest.mark.parametrize("stop", [KeyboardInterrupt(), RuntimeError("no result in 15.0 s")])

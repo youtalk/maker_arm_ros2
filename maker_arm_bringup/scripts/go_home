@@ -45,7 +45,9 @@ SPIN_S = 0.1
 # and ready are 0.8 rad or more away on J2, so a run from a raised pose is refused.
 MAX_TRAVEL_RAD = 0.6
 SETTLE_S = 1.0  # the gripper goal ends within its 2 mm goal_tolerance, the jaw is still closing
-ARRIVED_RAD = 0.02
+# Ruling R37: the home band of park_monitor (its NEAR_RAD), so "at home" means one thing.
+# test_go_home.py checks that both are equal. At caps 0.5, J4 holds about 20 mrad below home.
+ARRIVED_RAD = 0.03
 # The gripper controller's own goal_tolerance (ros2_controllers.yaml). The jaw can close past
 # its goal against its closing cap: on the real arm the closed goal 0.0020 m ended at 0.0014 m.
 ARRIVED_M = 0.002

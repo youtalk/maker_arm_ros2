@@ -40,7 +40,7 @@ from rclpy.qos import DurabilityPolicy, QoSProfile
 from sensor_msgs.msg import JointState
 
 # The owner's rule (spec 6.9).
-NEAR_RAD = 0.03
+NEAR_RAD = 0.03  # also go_home's ARRIVED_RAD (ruling R37)
 # Arms the park. Wider than NEAR_RAD, so a hold error near NEAR_RAD (J4 held 18 mrad off home on
 # the real arm at caps 0.5) does not count as a move away.
 AWAY_RAD = 0.15
