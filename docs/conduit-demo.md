@@ -40,13 +40,19 @@ export RMW_IMPLEMENTATION=rmw_zenoh_cpp ROS_DOMAIN_ID=123
         head_camera:=/dev/v4l/by-id/usb-Remo_Tech_Co.__Ltd._OBSBOT_Meet_2-video-index0
     ```
 
-5. Keep the arm supported. In terminal 3, move the arm to `home`. It prints `go_home: the arm is at home and the jaw is closed`.
+5. In a new terminal, open the monitor for the arm's diagnostics. Use the same RMW and domain ID as the stack. Look at the `maker_arm: ` statuses during the take. A WARN or an ERROR on a joint means a hot motor or a motor that does not answer.
+
+    ```sh
+    ros2 run rqt_runtime_monitor rqt_runtime_monitor
+    ```
+
+6. Keep the arm supported. In terminal 3, move the arm to `home`. It prints `go_home: the arm is at home and the jaw is closed`.
 
     ```sh
     ros2 run maker_arm_bringup go_home
     ```
 
-6. In Conduit, tap the gear icon, set these values and connect.
+7. In Conduit, tap the gear icon, set these values and connect.
 
     | Item | Value |
     | --- | --- |
@@ -56,20 +62,20 @@ export RMW_IMPLEMENTATION=rmw_zenoh_cpp ROS_DOMAIN_ID=123
     | Domain ID | the `ROS_DOMAIN_ID` above |
     | Distribution | Jazzy |
 
-7. Start the take within 60 s of `go_home`. Move to `work` with a Conduit pose, or press HOLD and move the phone. If the arm stays at `home` for 60 s, it parks. Then wake it (step 9).
-8. During the take, remember these rules:
+8. Start the take within 60 s of `go_home`. Move to `work` with a Conduit pose, or press HOLD and move the phone. If the arm stays at `home` for 60 s, it parks. Then wake it (step 10).
+9. During the take, remember these rules:
 
     - If nobody drives the arm for 30 s and the arm is away from `home`, it returns to `home` and parks. Put a held object down before you stop, because the park turns off the gripper motor.
     - If Conduit loses Wi-Fi during HOLD, Servo keeps the last command for up to 0.5 s. Then it stops the arm.
     - A pose move runs on the computer. If Conduit loses Wi-Fi during a pose move, the move continues to its end.
 
-9. Between takes, let the arm park and cool. J3 heats about 2.5 degrees C per minute while it holds a pose. Run `maker-arm-cli status --interface can0` and read `temp_max_c`. When it is below 40, wake the arm: support it, run `wake` in terminal 3 and type `ENABLE`. `wake` ends with `go_home`, so start the next take within 60 s (step 7).
+10. Between takes, let the arm park and cool. J3 heats about 2.5 degrees C per minute while it holds a pose. Run `maker-arm-cli status --interface can0` and read `temp_max_c`. When it is below 40, wake the arm: support it, run `wake` in terminal 3 and type `ENABLE`. `wake` ends with `go_home`, so start the next take within 60 s (step 8).
 
     ```sh
     ros2 run maker_arm_bringup wake
     ```
 
-10. To end the session, support the arm. Let it park, or run `ros2 run maker_arm_bringup release` and type `RELEASE`. Stop the launch with Ctrl-C in terminal 2. End the released daemon (see [End a released daemon](../README.md#end-a-released-daemon)). Stop the router with Ctrl-C in terminal 1. Press the emergency stop and turn off the power supply.
+11. To end the session, support the arm. Let it park, or run `ros2 run maker_arm_bringup release` and type `RELEASE`. Stop the launch with Ctrl-C in terminal 2. End the released daemon (see [End a released daemon](../README.md#end-a-released-daemon)). Stop the router with Ctrl-C in terminal 1. Press the emergency stop and turn off the power supply.
 
 If the motors lose power, every joint loses its torque at the same time and the arm drops. The launch log shows a motor fault and feedback timeouts. Do these steps:
 

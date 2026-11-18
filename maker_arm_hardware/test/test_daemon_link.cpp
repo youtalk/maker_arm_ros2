@@ -32,7 +32,7 @@ using maker_arm_hardware::DaemonOptions;
 
 const char kInstall[] =
   "git clone https://github.com/youtalk/maker-arm-rs && "
-  "git -C maker-arm-rs checkout e11ba8865087baf68f7017d9113b33fda197255c && "
+  "git -C maker-arm-rs checkout 8435d9fda5f4798b654a3b4cb9fc6def98e91723 && "
   "cargo install --locked --path maker-arm-rs/crates/maker-arm-cli";
 
 namespace
@@ -191,14 +191,14 @@ TEST(DaemonLink, AnotherProtocolNamesTheInstallCommand)
   const int l = socket(AF_UNIX, SOCK_STREAM, 0);
   ASSERT_EQ(bind(l, reinterpret_cast<const sockaddr *>(&a), sizeof a), 0);
   ASSERT_EQ(listen(l, 1), 0);
-  // A daemon of wire version 2: it reads the Hello and the Poll, then answers in its version.
+  // A daemon of wire version 3: it reads the Hello and the Poll, then answers in its version.
   std::thread peer([l] {
       pollfd p{l, POLLIN, 0};
       if (poll(&p, 1, 5000) != 1) {return;}  // never hangs the test
       const int c = accept(l, nullptr, nullptr);
       std::array<uint8_t, 32> in{};
       if (recv(c, in.data(), in.size(), MSG_WAITALL) == 32) {
-        std::array<uint8_t, w::kStateLen> out{0x4D, 0x52, 0x41, 0x4D, 2, 0, 4, 0};
+        std::array<uint8_t, w::kStateLen> out{0x4D, 0x52, 0x41, 0x4D, 3, 0, 4, 0};
         if (send(c, out.data(), out.size(), MSG_NOSIGNAL) < 0) {}
       }
       close(c);
@@ -206,7 +206,7 @@ TEST(DaemonLink, AnotherProtocolNamesTheInstallCommand)
   const auto e = what_of_open(o);
   peer.join();
   close(l);
-  EXPECT_NE(e.find("wire version 2"), std::string::npos) << e;
+  EXPECT_NE(e.find("wire version 3"), std::string::npos) << e;
   EXPECT_NE(e.find("speaks another protocol"), std::string::npos) << e;
   EXPECT_NE(e.find(kInstall), std::string::npos) << e;
 }
@@ -363,7 +363,7 @@ struct FakeDaemon
         } else if (in[12] == static_cast<uint8_t>(w::Op::Activate)) {
           ++activates;
         }
-        std::array<uint8_t, w::kStateLen> out{0x4D, 0x52, 0x41, 0x4D, 1, 0, 4, 0};
+        std::array<uint8_t, w::kStateLen> out{0x4D, 0x52, 0x41, 0x4D, 2, 0, 4, 0};
         std::memcpy(out.data() + 8, in.data() + 8, 4);  // the seq
         out[12] = static_cast<uint8_t>(mode.load());
         std::memcpy(out.data() + 16, &digest, 8);
