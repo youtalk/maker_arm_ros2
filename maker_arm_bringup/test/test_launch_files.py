@@ -141,8 +141,10 @@ def test_torque_off_launch_never_starts_the_daemon():
     entities = load("torque_off").generate_launch_description().entities
     nodes = [e for e in entities if isinstance(e, Node)]
     assert {n.node_executable for n in nodes} == {"robot_state_publisher", "rviz2", "torque_off_view"}
-    declared = {e.name for e in entities if isinstance(e, DeclareLaunchArgument)}
-    assert {"interface", "profile", "gripper_map"} <= declared
+    d = {e.name: "".join(t.text for t in e.default_value)
+         for e in entities if isinstance(e, DeclareLaunchArgument)}
+    assert d["gripper_map"].endswith("config/daemon/gripper_map.txt")  # the measured map
+    assert {"interface", "profile"} <= set(d)
 
 
 def test_sim_takes_the_profile_and_the_plant_start():
@@ -155,3 +157,15 @@ def test_sim_takes_the_profile_and_the_plant_start():
     (plant,) = [e for e in entities if isinstance(e, Node) and e.node_package == "maker_arm_mujoco"]
     names = {"".join(t.text for t in key) for p in plant._Node__parameters for key in p}
     assert "start" in names
+
+
+def defaults(name):
+    return {e.name: "".join(t.text for t in e.default_value)
+            for e in load(name).generate_launch_description().entities
+            if isinstance(e, DeclareLaunchArgument)}
+
+
+def test_the_stack_passes_the_measured_gripper_map_by_default():
+    measured = LAUNCH.parents[1] / "maker_arm_description/config/daemon/gripper_map.txt"
+    # sim.launch.py and simarm.launch.py leave it to this default.
+    assert defaults("stack")["gripper_map"] == measured.read_text().strip()

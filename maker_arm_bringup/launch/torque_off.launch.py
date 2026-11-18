@@ -19,7 +19,7 @@ def generate_launch_description():
         Command(["xacro ", xacro, " use_ros2_control:=false"]), value_type=str)}
     rviz_cfg = os.path.join(share("maker_arm_bringup"), "rviz", "torque_off.rviz")
     defaults = {"interface": "can0", "profile": os.path.join(DAEMON, "real_profile_caps05.json"),
-                "gripper_map": ""}
+                "gripper_map": os.path.join(DAEMON, "gripper_map.txt")}
     return LaunchDescription([
         *[DeclareLaunchArgument(k, default_value=v) for k, v in defaults.items()],
         Node(package="robot_state_publisher", executable="robot_state_publisher",

@@ -179,7 +179,7 @@ If the real arm loses power or CAN, it can fall and break. Software cannot preve
     ros2 launch maker_arm_bringup torque_off.launch.py
     ```
 
-    Move each joint by hand. If RViz moves the joint the other way, the direction is wrong. If the pose does not match the arm, the offset is wrong. The jaw follows the gripper map. Add `profile:=<file>` for another profile. Add `gripper_map:=<file>` for a file with one line `a,b`. Without it, the CLI default map applies. `real.launch.py` uses the measured map by default. If a joint reads nan, the view names that joint once a second. The CLI also prints the fault text of a motor that reports a fault.
+    Move each joint by hand. If RViz moves the joint the other way, the direction is wrong. If the pose does not match the arm, the offset is wrong. The jaw follows the gripper map. Add `profile:=<file>` for another profile. The default gripper map is the measured map `gripper_map.txt`, as in `real.launch.py`. Add `gripper_map:=<file>` for another file with one line `a,b`. If a joint reads nan, the view names that joint once a second. The CLI also prints the fault text of a motor that reports a fault.
 
     Start each hand motion from the folded rest. The table gives one motion for each joint and the change of the joint value. To see the values, run `ros2 topic echo /joint_states` in a second terminal. If a value changes the other way, the direction of that joint is wrong. Stop, and do not launch.
 

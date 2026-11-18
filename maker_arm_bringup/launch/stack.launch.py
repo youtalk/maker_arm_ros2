@@ -12,6 +12,8 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 DAEMON = os.path.join(share("maker_arm_description"), "config", "daemon")
+with open(os.path.join(DAEMON, "gripper_map.txt")) as f:
+    GRIPPER_MAP = f.read().strip()  # the measured map, one line "a,b"
 # name -> default, in the order of the xacro args of maker_arm_description
 ARGS = {
     "interface": "sim",
@@ -22,7 +24,7 @@ ARGS = {
     "dynamics": os.path.join(DAEMON, "dynamics_urdf.json"),
     "params": "",
     "residual": "",
-    "gripper_map": "",
+    "gripper_map": GRIPPER_MAP,
     "socket": "",
     "log": "",
     "desk": "true",
