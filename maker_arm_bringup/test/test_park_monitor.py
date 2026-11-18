@@ -382,3 +382,19 @@ def test_a_refused_or_late_servo_pause_sends_no_goal(monkeypatch):
         returned, line = pm.return_home(pause, move, "goal", stop)
         assert not returned and line.startswith("not returning home") and pause.calls == 1
     assert move.sent == []
+
+
+def test_a_goal_that_moveit_accepts_late_is_cancelled(monkeypatch):
+    from rclpy.task import Future
+
+    pm = load()
+    monkeypatch.setattr(pm, "MOVE_WAIT_S", 0.1)
+    reply = Future()  # no executor: its done callbacks run in set_result
+    handle = SimpleNamespace(accepted=True, cancelled=False)
+    handle.cancel_goal_async = lambda: setattr(handle, "cancelled", True)
+    move = SimpleNamespace(wait_for_server=lambda timeout_sec: True,
+                           send_goal_async=lambda goal: reply)
+    returned, line = pm.return_home(FakePause(up=False), move, "goal", threading.Event())
+    assert not returned and "no goal reply in 0.1 s" in line and not handle.cancelled
+    reply.set_result(handle)  # MoveIt accepts after the wait
+    assert handle.cancelled
