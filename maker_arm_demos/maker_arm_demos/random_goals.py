@@ -30,6 +30,7 @@ DRAWS_PER_GOAL = 100
 JAW_TOL = 0.002  # m, the gripper controller's goal_tolerance
 JAW_WAIT = 3.0  # s
 STATE_WAIT = 10.0  # s for MoveIt's first complete joint state
+CONNECT_WAIT = 10.0  # s for MoveIt's controller clients to connect after start
 # RRTConnect can time out on a slow runner for a goal it solves on a retry.
 PLAN_TRIES = 3
 
@@ -114,6 +115,19 @@ def try_move(robot, component, params=None, **goal):
     return 'execute', str(getattr(result, 'status', result))
 
 
+def wait_for_execution(robot, component):
+    """Execute a move to the measured state until one succeeds. It moves nothing.
+
+    Right after start, MoveIt's action client for a controller can be not yet connected
+    ("Action client not connected"), and the first execution then aborts with no motion.
+    """
+    deadline = time.monotonic() + CONNECT_WAIT
+    while try_move(robot, component, robot_state=current_state(component)):
+        if time.monotonic() > deadline:
+            raise TimeoutError(f'MoveIt could not execute a move in {CONNECT_WAIT} s')
+        time.sleep(0.5)
+
+
 def move(robot, component, params=None, **goal):
     """Plan from the measured state to goal, with params (PlanRequestParameters) if given."""
     return try_move(robot, component, params, **goal) is None
@@ -140,6 +154,7 @@ def run(robot, args):
     arm = robot.get_planning_component('arm')
     # The measured state: the gripper stays where the planner will see it.
     measured = current_state(arm)
+    wait_for_execution(robot, arm)
 
     goals = []
     with robot.get_planning_scene_monitor().read_only() as scene:
