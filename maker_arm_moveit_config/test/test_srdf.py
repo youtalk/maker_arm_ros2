@@ -76,8 +76,8 @@ def servo_margins():
 
 def test_servo_keeps_the_singularity_and_margin_settings_the_poses_were_measured_with():
     servo = yaml.safe_load((PKG / "config" / "servo.yaml").read_text())
-    assert servo["hard_stop_singularity_threshold"] == 30.0
-    assert servo["lower_singularity_threshold"] == 17.0
+    assert servo["hard_stop_singularity_threshold"] == 40.0
+    assert servo["lower_singularity_threshold"] == 25.0
     assert len(servo_margins()) == len(ARM)
 
 
@@ -156,12 +156,13 @@ def jacobian(joints, h=1e-6):
     return np.array(cols).T
 
 
-def test_the_servo_states_sit_between_servos_singularity_thresholds():
-    servo = yaml.safe_load((PKG / "config" / "servo.yaml").read_text())
-    lo, hi = servo["lower_singularity_threshold"], servo["hard_stop_singularity_threshold"]
+def test_servo_moves_from_the_servo_states_and_halts_at_home():
+    hard_stop = yaml.safe_load((PKG / "config" / "servo.yaml").read_text())[
+        "hard_stop_singularity_threshold"]
+    cond = {name: np.linalg.cond(jacobian(q)) for name, q in states("arm").items()}
     for name in SERVO_STATES:
-        c = np.linalg.cond(jacobian(states("arm")[name]))
-        assert lo < c < hi, (name, c)
+        assert cond[name] < hard_stop, (name, cond[name])
+    assert cond["home"] > hard_stop, cond["home"]
 
 
 def test_ready_keeps_its_place_and_points_the_tool_as_low_as_j4_allows():

@@ -12,16 +12,20 @@ command_in_type: speed_units
 # motor command. Check this on the real arm in V3.
 use_smoothing: false
 check_collisions: true
-# Pinned to the moveit_servo 2.12 defaults on purpose: the Servo-safe arm states (work, stand)
-# were measured with these values, and test_srdf.py reads joint_limit_margins to keep those
-# poses clear of Servo's joint bound. The Jacobian condition number at work is 25.4 and at stand
-# 22.4, between the lower threshold and the hard stop (test_srdf.py checks both); at home (41.0)
-# Servo halts. Changing any of these invalidates the measured poses.
-hard_stop_singularity_threshold: 30.0
-lower_singularity_threshold: 17.0
+# Servo slows down above lower_singularity_threshold and halts at hard_stop_singularity_threshold.
+# Both are above the moveit_servo 2.12 defaults (17 and 30). Servo's condition number mixes
+# metres and radians, so it reads high on this small arm: above 17 in 99% and above 30 in 75% of
+# random poses above the desk. At the defaults, Servo already slowed at work (25.4) and stand
+# (22.4), and in the simulation a 4 s push at 0.05 m/s along x, y or z moved the tip only 16 to
+# 141 mm. At 25 and 40 the same pushes move it 38 to 195 mm, and Servo still halts at home (41.0).
+# test_srdf.py checks work and stand below the hard stop and home above it.
+hard_stop_singularity_threshold: 40.0
+lower_singularity_threshold: 25.0
 # double_array: either one value for all joints or one per joint of the "arm" group (6 joints,
-# link_002..link_007), in radians.
-joint_limit_margins: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+# link_002..link_007), in radians. Servo halts 0.05 rad inside the limits of joint_limits.yaml.
+# Those are 0.05 rad inside the profiles, and the profiles are 0.05 rad inside the vendor's stop
+# captures: Servo halts 0.15 rad before a stop. test_srdf.py reads these margins.
+joint_limit_margins: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
 command_out_type: trajectory_msgs/JointTrajectory
 command_out_topic: /arm_controller/joint_trajectory
 joint_topic: /joint_states
