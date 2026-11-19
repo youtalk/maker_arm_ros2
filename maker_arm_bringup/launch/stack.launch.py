@@ -73,10 +73,17 @@ def generate_launch_description():
     # apps that read it from the topic. robot_state_publisher already publishes /robot_description.
     moveit_params = [description, *moveit.values(),
                      {"use_sim_time": False, "publish_robot_description_semantic": True}]
+    # Servo alone lets the fingers touch the desk, so an operator can grasp an object on it.
+    # Servo's collision halt ignores the direction, so a finger on the desk froze every command,
+    # even one that lifts. The other links still stop at the desk. move_group and park_monitor
+    # keep the shared SRDF, so no planned path drags the fingertips through the desk.
+    servo_srdf = _text(mc, "maker_arm.srdf").replace("</robot>", "".join(
+        f'  <disable_collisions link1="desk_link" link2="gripper_{side}" reason="Never"/>\n'
+        for side in ("left", "right")) + "</robot>")
     # The planning limits, so Servo holds the profile-derived limits and not the URDF's.
     servo_params = [
         description,
-        moveit["robot_description_semantic"],
+        {"robot_description_semantic": servo_srdf},
         moveit["robot_description_kinematics"],
         moveit["robot_description_planning"],
         {"moveit_servo": _yaml(mc, "servo.yaml")},

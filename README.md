@@ -357,6 +357,8 @@ On the real arm, run `ros2 run maker_arm_bringup go_home` once after the launch,
 
 Before you teleoperate, move to `work` or `stand`. Servo halts at `home`, because `home` is a singularity. At `ready`, J4 sits near its limit, so Servo stops a push that turns J4 further down. Servo moves along every axis from `work` and `stand`. In the simulation, Servo got 200 mm pushes (0.05 m/s for 4 s) along x, y and z. The tip moved 38 to 195 mm. Servo slows down near a singularity, and it stops 0.05 rad before a joint limit. A push that pitches the tool down or lifts the tip turns J4 toward its lower stop. Servo stops that push near the stop, with the status `JOINT_BOUND`. This stop is the joint limit, not a fault. The real arm is not yet verified.
 
+Servo lets the fingers touch the desk, so you can grasp an object that lies on it. The other links of the arm still slow down within 10 mm of the desk and stop at it. When the fingers touch the desk, stop the push down. A longer push presses the fingers on the desk, up to the daemon's error clamp. If a link that is not a finger touches the desk, Servo stops every command, also a lift. Then support the arm and release it (step 15 of [The real arm](#the-real-arm)). MoveIt plans keep the fingers off the desk. So if the measured fingers are below the modeled desk, MoveIt refuses to plan, and Conduit's poses and the return to `home` fail. Lift the fingers with Servo first.
+
 ### Run a Conduit demo alone
 
 [docs/conduit-demo.md](docs/conduit-demo.md) gives the steps for one person who runs a demo session with Conduit on the real arm.
@@ -378,7 +380,7 @@ What the stack does for you:
 - If ROS crashes or stops sending commands, the daemon holds the arm.
 - The daemon refuses a command jump and clamps every command to the profile.
 - Enable holds the measured pose, or the nearest pose inside the joint limits.
-- MoveIt keeps a margin inside the joint limits. The collision matrix and a desk object protect the arm and the desk.
+- MoveIt keeps a margin inside the joint limits. The collision matrix and a desk object protect the arm and the desk. In Servo, only the fingers can touch the desk.
 - The gripper squeeze torque is limited.
 - At `home`, the arm parks, so that the motors can cool.
 
